@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>Ozakboy.TradeKit.Abstractions</PackageId>
+    <AssemblyName>Ozakboy.TradeKit.Abstractions</AssemblyName>
+    <RootNamespace>Ozakboy.TradeKit.Abstractions</RootNamespace>
+
+    <Title>Ozakboy.TradeKit.Abstractions — 合約交易所中立抽象層</Title>
+    <Description>交易所中立的合約交易抽象層:委託、持倉、帳戶、K 線、成交等不可變模型,交易規則(tickSize/stepSize/minNotional)校正,以及 IExchangeClient / IMarketDataFeed / IUserDataFeed 介面。所有會失敗的操作一律回傳 Result&lt;T&gt;,價量金額一律 decimal,時間一律 UTC 語意的 DateTimeOffset;不含任何交易所專屬實作,可由純記憶體的回測撮合器完整實作。Exchange-neutral abstractions for derivatives trading: immutable order/position/account/kline/trade models, exchange trading-rule normalisation, and client and market-data interfaces. Every fallible operation returns Result&lt;T&gt;; no exchange-specific code, so an in-memory backtest engine can implement it end to end.</Description>
+    <PackageTags>ozakboy;tradekit;trading;futures;perpetual;exchange;abstractions;backtest;order;position;kline;decimal;tick-size;step-size;result-type;dotnet;csharp</PackageTags>
+
+    <PackageProjectUrl>https://github.com/ozakboy/Ozakboy.TradeKit.Abstractions</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ozakboy/Ozakboy.TradeKit.Abstractions</RepositoryUrl>
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!--
+    開發期以 ProjectReference 指向本機的 Ozakboy.Core.Abstractions。
+    該套件尚未發佈到 NuGet;發佈之後這一段要換成:
+      <PackageReference Include="Ozakboy.Core.Abstractions" Version="x.y.z" />
+  -->
+  <ItemGroup>
+    <ProjectReference Include="D:\程式專案\Ozakboy_GitHub\ozakboy\Ozakboy.Core.Abstractions\src\Ozakboy.Core.Abstractions\Ozakboy.Core.Abstractions.csproj" />
+  </ItemGroup>
+
+  <!--
+    刻意不引用 Microsoft.SourceLink.GitHub 套件。
+    自 .NET 8 起 SourceLink 已內建於 SDK,只要設定 PublishRepositoryUrl 與 EmbedUntrackedSources
+    (見 Directory.Build.props)即可產生原始碼連結;外掛套件反而會帶進額外的相依鏈。
+  -->
+
+</Project>
