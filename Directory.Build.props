@@ -42,6 +42,12 @@
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <IsPackable>false</IsPackable>
+    <!--
+      CA1707:測試方法慣用 Method_Scenario_Expected 的底線命名,可讀性優於 PascalCase 長字串。
+      MSTEST0037:建議改用 Assert.IsLessThanOrEqualTo 這類專用 API;但那些多載無法附帶自訂失敗訊息,
+                  而測試失敗時的訊息比斷言方法的名稱更有價值,故不強制。
+    -->
+    <NoWarn>$(NoWarn);CA1707;MSTEST0037</NoWarn>
   </PropertyGroup>
 
   <!-- 套件中繼資料(共用部分) -->
