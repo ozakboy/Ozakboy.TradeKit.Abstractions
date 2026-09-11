@@ -21,12 +21,13 @@
   </ItemGroup>
 
   <!--
-    開發期以 ProjectReference 指向本機的 Ozakboy.Core.Abstractions。
-    該套件尚未發佈到 NuGet;發佈之後這一段要換成:
-      <PackageReference Include="Ozakboy.Core.Abstractions" Version="x.y.z" />
+    Ozakboy.Core.Abstractions 已發佈到 nuget.org,改以 PackageReference 引用。
+    先前是指向本機絕對路徑的 ProjectReference,那讓這個 repo 只能在該路徑存在的機器上建置:
+    CI 與其他開發者都還原不到,而且 Release 建置會鏈到對方的 Debug 組件
+    —— Configuration 不會流經 sln 外部的專案參照。
   -->
   <ItemGroup>
-    <ProjectReference Include="D:\程式專案\Ozakboy_GitHub\ozakboy\Ozakboy.Core.Abstractions\src\Ozakboy.Core.Abstractions\Ozakboy.Core.Abstractions.csproj" />
+    <PackageReference Include="Ozakboy.Core.Abstractions" Version="0.2.0" />
   </ItemGroup>
 
   <!--
