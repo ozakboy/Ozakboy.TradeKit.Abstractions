@@ -8,6 +8,44 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-09-12
+
+0.2.0 的 `AccountUpdate` 與 `MarginCall` 用完整的 `Position` / `Balance` 承載事件內容,但交易所的這兩個事件
+並不帶全部欄位,拿不到的只能填 0。其中最危險的一個:`Position.Notional` 等於「數量 × 標記價」,
+而帳戶變動事件不帶標記價,於是它恆為 0 —— 風控讀到的就是「這個部位沒有曝險」。
+0.2.0's `AccountUpdate` and `MarginCall` carried their contents as full `Position` / `Balance` values, but the
+exchange events do not deliver every field, so the missing ones had to be zero. The most dangerous: `Position.Notional`
+is quantity times mark price, account change events carry no mark price, and so it was always zero — which a risk
+check reads as "no exposure".
+
+### 新增功能 / Added
+
+- **`PositionChange`**:帳戶變動事件裡的部位增量。數量、方向、均價、未實現損益、累計已實現損益、保證金模式、
+  逐倉保證金。**刻意沒有**標記價、名目價值、槓桿、強平價。
+  A position delta from an account change event. **Deliberately without** mark price, notional, leverage, or
+  liquidation price.
+- **`BalanceChange`**:帳戶變動事件裡的餘額增量。錢包餘額、全倉錢包餘額,以及 `NonTradingChange`
+  (入金出金轉帳,不含損益與手續費 —— 權益曲線要扣掉的就是這一項)。**刻意沒有**可用餘額與未實現損益。
+  A balance delta: wallet balance, cross wallet balance, and `NonTradingChange` (deposits, withdrawals,
+  transfers — what an equity curve must take out). **Deliberately without** available balance or unrealised PnL.
+- **`MarginCallPosition`**:保證金追繳裡的部位。追繳事件帶標記價與維持保證金,所以 `Notional` 是真的;
+  不帶開倉均價與槓桿,所以沒有這兩個成員。
+  A position from a margin call. The event carries mark price and maintenance margin, so `Notional` is real; it
+  carries no entry price or leverage, so neither member exists.
+
+### 破壞性變更 / Breaking
+
+- `AccountUpdate.Positions` 由 `IReadOnlyList<Position>` 改為 `IReadOnlyList<PositionChange>`,
+  `AccountUpdate.Balances` 由 `IReadOnlyList<Balance>` 改為 `IReadOnlyList<BalanceChange>`,
+  `MarginCall.Positions` 由 `IReadOnlyList<Position>` 改為 `IReadOnlyList<MarginCallPosition>`。
+  這三個屬性都在 0.2.0(前一天)才加入,發佈時尚無任何已知消費端;趁現在改是代價最低的時刻。
+  All three properties arrived in 0.2.0 the day before, with no known consumer yet — the cheapest moment to
+  change them.
+
+欄位不存在,編譯器才擋得住誤讀。填 0 加文件警告,靠的是每個讀者都讀過文件。
+Only an absent member lets the compiler stop the misreading; zero plus a warning in the docs relies on every reader
+having read the docs.
+
 ## [0.2.0] - 2026-09-11
 
 `IUserDataFeed` 先前只收得下委託與成交,但私有串流實際會送四類事件。缺的三類分別是餘額與部位的變動、

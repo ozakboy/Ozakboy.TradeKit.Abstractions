@@ -48,7 +48,7 @@ public sealed class UserDataModelTests
         {
             Reason = AccountUpdateReason.FundingFee,
             RawReason = "FUNDING_FEE",
-            Positions = [Position.Flat("BTCUSDT", Moment) with { Quantity = 0.5m }],
+            Positions = [new PositionChange { Symbol = "BTCUSDT", Quantity = 0.5m }],
             Timestamp = Moment,
         };
 
@@ -79,13 +79,34 @@ public sealed class UserDataModelTests
         var call = new MarginCall
         {
             CrossWalletBalance = 120.5m,
-            Positions = [Position.Flat("BTCUSDT", Moment) with { Quantity = -1m, LiquidationPrice = 70_000m }],
+            Positions = [new MarginCallPosition { Symbol = "BTCUSDT", Quantity = -1m, MarkPrice = 70_000m }],
             Timestamp = Moment,
         };
 
         Assert.HasCount(1, call.Positions);
-        Assert.IsTrue(call.Positions[0].IsShort);
+
+        // 追繳事件帶標記價,所以名目價值是真的 —— 空單的數量取絕對值。
+        Assert.AreEqual(70_000m, call.Positions[0].Notional);
         Assert.AreEqual(120.5m, call.CrossWalletBalance);
+    }
+
+    [TestMethod]
+    public void 帳戶增量型別不提供事件拿不到的欄位()
+    {
+        // 這條釘住的是一個設計決定:帳戶變動事件不帶標記價與可用餘額,所以型別上就不能有這些成員。
+        // 若有人為了方便把它們加回來,拿不到的值只能填 0,而部位名目價值恆為 0 對風控就是「沒有曝險」。
+        string[] absentFromPositionChange = ["MarkPrice", "Notional", "Leverage", "LiquidationPrice"];
+        string[] absentFromBalanceChange = ["AvailableBalance", "UnrealizedPnl", "MarginBalance"];
+
+        foreach (var name in absentFromPositionChange)
+        {
+            Assert.IsNull(typeof(PositionChange).GetProperty(name), $"PositionChange 不該有 {name}:事件拿不到這個值。");
+        }
+
+        foreach (var name in absentFromBalanceChange)
+        {
+            Assert.IsNull(typeof(BalanceChange).GetProperty(name), $"BalanceChange 不該有 {name}:事件拿不到這個值。");
+        }
     }
 
     [TestMethod]

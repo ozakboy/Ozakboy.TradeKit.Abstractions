@@ -34,16 +34,18 @@ public sealed record AccountUpdate
     public string? RawReason { get; init; }
 
     /// <summary>
-    /// 這次<b>有變動</b>的餘額。
-    /// The balances that <b>changed</b>.
+    /// 這次<b>有變動</b>的餘額。型別只含事件帶得來的欄位,見 <see cref="BalanceChange"/>。
+    /// The balances that <b>changed</b>; the type holds only what the event delivers — see
+    /// <see cref="BalanceChange"/>.
     /// </summary>
-    public IReadOnlyList<Balance> Balances { get; init; } = [];
+    public IReadOnlyList<BalanceChange> Balances { get; init; } = [];
 
     /// <summary>
-    /// 這次<b>有變動</b>的部位。
-    /// The positions that <b>changed</b>.
+    /// 這次<b>有變動</b>的部位。型別刻意沒有標記價與名目價值,見 <see cref="PositionChange"/>。
+    /// The positions that <b>changed</b>; the type deliberately has no mark price or notional — see
+    /// <see cref="PositionChange"/>.
     /// </summary>
-    public IReadOnlyList<Position> Positions { get; init; } = [];
+    public IReadOnlyList<PositionChange> Positions { get; init; } = [];
 
     /// <summary>
     /// 這筆更新的時間(UTC 語意)。

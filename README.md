@@ -90,7 +90,9 @@ opaque "invalid parameter".
 
 **Models** — `SymbolInfo` (identity plus trading rules and the normalisation methods), `OrderRequest`, `Order`,
 `OrderIdentifier`, `Position`, `Balance`, `AccountSnapshot`, `Kline`, `KlineQuery`, `Trade`, `MarkPriceUpdate`,
-`NormalizedOrderSize`, `AccountUpdate` (a **delta**, not a snapshot), `MarginCall`, `ResyncRequired`.
+`NormalizedOrderSize`, `AccountUpdate` (a **delta**, not a snapshot, built from `PositionChange` and
+`BalanceChange`, which carry only what the event delivers), `MarginCall` (with `MarginCallPosition`),
+`ResyncRequired`.
 
 **Interfaces** — `IExchangeInfoProvider` (symbols, server time), `IExchangeClient` (account, positions, orders),
 `IMarketDataFeed` (historical klines, live klines and mark prices), `IUserDataFeed` (orders, fills, account

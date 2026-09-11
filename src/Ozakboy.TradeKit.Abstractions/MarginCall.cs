@@ -25,10 +25,11 @@ public sealed record MarginCall
     public decimal? CrossWalletBalance { get; init; }
 
     /// <summary>
-    /// 被警告的部位。
-    /// The positions under warning.
+    /// 被警告的部位。型別只含事件帶得來的欄位,見 <see cref="MarginCallPosition"/>。
+    /// The positions under warning; the type holds only what the event delivers — see
+    /// <see cref="MarginCallPosition"/>.
     /// </summary>
-    public IReadOnlyList<Position> Positions { get; init; } = [];
+    public IReadOnlyList<MarginCallPosition> Positions { get; init; } = [];
 
     /// <summary>
     /// 這筆警告的時間(UTC 語意)。

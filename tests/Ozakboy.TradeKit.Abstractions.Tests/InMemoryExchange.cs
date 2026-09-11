@@ -246,7 +246,18 @@ internal sealed class InMemoryExchange : IExchangeClient, IMarketDataFeed, IUser
             yield return new AccountUpdate
             {
                 Reason = AccountUpdateReason.Order,
-                Positions = [position],
+                Positions =
+                [
+                    new PositionChange
+                    {
+                        Symbol = position.Symbol,
+                        Quantity = position.Quantity,
+                        Side = position.Side,
+                        EntryPrice = position.EntryPrice,
+                        UnrealizedPnl = position.UnrealizedPnl,
+                        MarginMode = position.MarginMode,
+                    },
+                ],
                 Timestamp = _now,
             };
         }

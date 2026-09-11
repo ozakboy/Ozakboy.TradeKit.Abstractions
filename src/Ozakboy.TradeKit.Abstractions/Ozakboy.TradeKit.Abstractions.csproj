@@ -14,7 +14,7 @@
 
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
 
-    <PackageReleaseNotes>0.2.0 — IUserDataFeed gains three subscriptions: SubscribeAccountUpdatesAsync, SubscribeMarginCallsAsync and SubscribeResyncSignalsAsync, with the new types AccountUpdate (a delta, not a snapshot), AccountUpdateReason, MarginCall, ResyncRequired and ResyncReason. Adding interface members breaks implementers, not callers. Ozakboy.Core.Abstractions moves to 0.3.0. Full notes: https://github.com/ozakboy/Ozakboy.TradeKit.Abstractions/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>0.3.0 — Breaking: AccountUpdate.Positions/Balances and MarginCall.Positions now use PositionChange, BalanceChange and MarginCallPosition, which carry only what the exchange event delivers. The previous full Position/Balance values had to zero the missing fields, and Position.Notional (quantity × mark price) was therefore always zero on account updates — read by a risk check as no exposure. The changed properties arrived in 0.2.0 the day before with no known consumer. Full notes: https://github.com/ozakboy/Ozakboy.TradeKit.Abstractions/blob/main/CHANGELOG.md</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

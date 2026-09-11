@@ -87,7 +87,8 @@ else
 
 **模型** — `SymbolInfo`(識別資料、交易規則與校正方法)、`OrderRequest`、`Order`、`OrderIdentifier`、
 `Position`、`Balance`、`AccountSnapshot`、`Kline`、`KlineQuery`、`Trade`、`MarkPriceUpdate`、
-`NormalizedOrderSize`、`AccountUpdate`(**增量**,不是快照)、`MarginCall`、`ResyncRequired`。
+`NormalizedOrderSize`、`AccountUpdate`(**增量**,不是快照;由只含事件實際欄位的 `PositionChange` 與
+`BalanceChange` 組成)、`MarginCall`(內含 `MarginCallPosition`)、`ResyncRequired`。
 
 **介面** — `IExchangeInfoProvider`(商品與伺服器時間)、`IExchangeClient`(帳戶、持倉、委託)、
 `IMarketDataFeed`(歷史 K 線、即時 K 線與標記價)、`IUserDataFeed`(委託、成交、帳戶變動、保證金追繳,
