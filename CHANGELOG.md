@@ -8,6 +8,17 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-09-11
+
+### Added
+
+- 套件圖示。ozakboy 套件家族共用的品牌圖示,會顯示在 nuget.org 與 IDE 的套件管理員。
+  Package icon: the shared ozakboy brand mark now shows on nuget.org and in IDE package managers.
+
+本版沒有任何程式碼變更。NuGet 已發佈版本的套件中繼資料不可更動,要更新圖示只能發新版。
+No code changed in this release. NuGet package metadata cannot be altered on an already-published
+version, so refreshing the icon requires publishing a new one.
+
 ## [0.1.0] - 2026-09-11
 
 首個版本。交易所中立的合約交易抽象層,只含型別定義與純函式,不含任何網路實作。
