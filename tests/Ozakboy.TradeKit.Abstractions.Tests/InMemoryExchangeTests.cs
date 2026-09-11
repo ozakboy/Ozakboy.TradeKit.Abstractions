@@ -226,4 +226,48 @@ public sealed class InMemoryExchangeTests
 
         Assert.AreEqual(TradeErrorCodes.OrderNotFound, cancelled.Error!.Code);
     }
+
+    [TestMethod]
+    public async Task 帳戶變動與對帳訊號也由純記憶體實作滿足()
+    {
+        var exchange = CreateExchange();
+
+        await exchange.PlaceOrderAsync(
+            new OrderRequest
+            {
+                Symbol = "BTCUSDT",
+                Side = OrderSide.Buy,
+                OrderType = OrderType.Market,
+                Quantity = 0.01m,
+                ClientOrderId = "pt-uds",
+            },
+            CancellationToken.None);
+
+        var updates = 0;
+
+        await foreach (var item in exchange.SubscribeAccountUpdatesAsync(CancellationToken.None))
+        {
+            Assert.IsTrue(item.TryGetValue(out var update));
+
+            // 增量:成交只動到一個部位,所以這一筆就只帶那一個,餘額清單是空的。
+            Assert.AreEqual(AccountUpdateReason.Order, update.Reason);
+            Assert.HasCount(1, update.Positions);
+            Assert.IsEmpty(update.Balances);
+            updates++;
+        }
+
+        Assert.AreEqual(1, updates);
+
+        // 記憶體內的撮合不追繳保證金也不斷線。這兩條是空的,但「存在且可訂閱」本身就是要驗的事:
+        // 回測要能走同一套介面,不能因為少了這兩個方法而編不過。
+        await foreach (var _ in exchange.SubscribeMarginCallsAsync(CancellationToken.None))
+        {
+            Assert.Fail("純記憶體的撮合不應該產生保證金追繳。");
+        }
+
+        await foreach (var _ in exchange.SubscribeResyncSignalsAsync(CancellationToken.None))
+        {
+            Assert.Fail("純記憶體的撮合不會斷線,不應該要求對帳。");
+        }
+    }
 }

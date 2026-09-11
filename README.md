@@ -90,10 +90,11 @@ opaque "invalid parameter".
 
 **Models** — `SymbolInfo` (identity plus trading rules and the normalisation methods), `OrderRequest`, `Order`,
 `OrderIdentifier`, `Position`, `Balance`, `AccountSnapshot`, `Kline`, `KlineQuery`, `Trade`, `MarkPriceUpdate`,
-`NormalizedOrderSize`.
+`NormalizedOrderSize`, `AccountUpdate` (a **delta**, not a snapshot), `MarginCall`, `ResyncRequired`.
 
 **Interfaces** — `IExchangeInfoProvider` (symbols, server time), `IExchangeClient` (account, positions, orders),
-`IMarketDataFeed` (historical klines, live klines and mark prices), `IUserDataFeed` (order and fill updates).
+`IMarketDataFeed` (historical klines, live klines and mark prices), `IUserDataFeed` (orders, fills, account
+changes, margin calls, and the signal that local state must be reconciled in full).
 
 **Error codes** — `TradeErrorCodes` holds the neutral codes (`trade.order_not_found`, `trade.notional_below_min`,
 `trade.rate_limited`, …) and `TradeErrors` builds the corresponding `Error` values. Mapping an exchange's own codes

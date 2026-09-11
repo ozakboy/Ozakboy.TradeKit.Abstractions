@@ -87,10 +87,11 @@ else
 
 **模型** — `SymbolInfo`(識別資料、交易規則與校正方法)、`OrderRequest`、`Order`、`OrderIdentifier`、
 `Position`、`Balance`、`AccountSnapshot`、`Kline`、`KlineQuery`、`Trade`、`MarkPriceUpdate`、
-`NormalizedOrderSize`。
+`NormalizedOrderSize`、`AccountUpdate`(**增量**,不是快照)、`MarginCall`、`ResyncRequired`。
 
 **介面** — `IExchangeInfoProvider`(商品與伺服器時間)、`IExchangeClient`(帳戶、持倉、委託)、
-`IMarketDataFeed`(歷史 K 線、即時 K 線與標記價)、`IUserDataFeed`(委託與成交更新)。
+`IMarketDataFeed`(歷史 K 線、即時 K 線與標記價)、`IUserDataFeed`(委託、成交、帳戶變動、保證金追繳,
+以及「本地狀態不可信,請全量對帳」的訊號)。
 
 **錯誤代碼** — `TradeErrorCodes` 放中立的代碼(`trade.order_not_found`、`trade.notional_below_min`、
 `trade.rate_limited` 等),`TradeErrors` 負責建立對應的 `Error`。把交易所自家的錯誤碼對映到這一組是

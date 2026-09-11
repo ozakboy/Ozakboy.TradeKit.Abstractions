@@ -234,6 +234,35 @@ internal sealed class InMemoryExchange : IExchangeClient, IMarketDataFeed, IUser
         }
     }
 
+    public async IAsyncEnumerable<Result<AccountUpdate>> SubscribeAccountUpdatesAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        foreach (var position in _positions.Values)
+        {
+            await Task.CompletedTask.ConfigureAwait(false);
+
+            // 這個假交易所的部位只會因為成交而變,所以原因固定是 Order;送出的是單一部位的增量,
+            // 正好示範 AccountUpdate 與 AccountSnapshot 的差別。
+            yield return new AccountUpdate
+            {
+                Reason = AccountUpdateReason.Order,
+                Positions = [position],
+                Timestamp = _now,
+            };
+        }
+    }
+
+    // 記憶體內的撮合不會追繳保證金,也不會斷線,所以這兩條永遠是空的 —— 回測的模擬實作同理。
+    // An in-memory matcher never issues a margin call and never drops a connection, so both streams stay empty;
+    // the same holds for a backtest implementation.
+    public IAsyncEnumerable<Result<MarginCall>> SubscribeMarginCallsAsync(
+        CancellationToken cancellationToken = default) =>
+        AsyncEnumerable.Empty<Result<MarginCall>>();
+
+    public IAsyncEnumerable<Result<ResyncRequired>> SubscribeResyncSignalsAsync(
+        CancellationToken cancellationToken = default) =>
+        AsyncEnumerable.Empty<Result<ResyncRequired>>();
+
     private void ApplyFill(Order order, decimal fillPrice)
     {
         var signed = order.Side == OrderSide.Buy ? order.FilledQuantity : -order.FilledQuantity;

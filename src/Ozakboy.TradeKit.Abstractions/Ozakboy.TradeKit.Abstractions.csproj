@@ -13,6 +13,8 @@
     <RepositoryUrl>https://github.com/ozakboy/Ozakboy.TradeKit.Abstractions</RepositoryUrl>
 
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <PackageReleaseNotes>0.2.0 — IUserDataFeed gains three subscriptions: SubscribeAccountUpdatesAsync, SubscribeMarginCallsAsync and SubscribeResyncSignalsAsync, with the new types AccountUpdate (a delta, not a snapshot), AccountUpdateReason, MarginCall, ResyncRequired and ResyncReason. Adding interface members breaks implementers, not callers. Ozakboy.Core.Abstractions moves to 0.3.0. Full notes: https://github.com/ozakboy/Ozakboy.TradeKit.Abstractions/blob/main/CHANGELOG.md</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -28,7 +30,7 @@
     —— Configuration 不會流經 sln 外部的專案參照。
   -->
   <ItemGroup>
-    <PackageReference Include="Ozakboy.Core.Abstractions" Version="0.2.0" />
+    <PackageReference Include="Ozakboy.Core.Abstractions" Version="0.3.0" />
   </ItemGroup>
 
   <!--
