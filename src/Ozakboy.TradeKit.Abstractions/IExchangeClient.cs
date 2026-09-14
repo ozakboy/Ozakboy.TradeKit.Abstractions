@@ -76,12 +76,14 @@ public interface IExchangeClient : IExchangeInfoProvider
     /// intended size.
     /// </para>
     /// <para>
-    /// <b>這個方法只收非條件單。</b>停損、停利與移動停損請走 <see cref="PlaceConditionalOrderAsync"/>
-    /// —— 那幾個類型送到這裡會被交易所拒絕,實作也會以代碼
-    /// <see cref="TradeErrorCodes.ConditionalOrderPathRequired"/> 先擋下來。
+    /// <b>這個方法只收非條件單。</b>停損、停利與移動停損請走 <see cref="PlaceConditionalOrderAsync"/>。
+    /// 那幾個類型送到這裡會被拒絕,而失敗的代碼是
+    /// <see cref="TradeErrorCodes.ConditionalOrderPathRequired"/> —— 它會指名該改呼叫哪一個方法,
+    /// 不會只回一句看不出原因的「參數不合法」。
     /// <b>This method takes non-conditional orders only.</b> Stops, take-profits, and trailing stops go through
-    /// <see cref="PlaceConditionalOrderAsync"/>: the exchange rejects those types here, and implementations
-    /// short-circuit them with <see cref="TradeErrorCodes.ConditionalOrderPathRequired"/>.
+    /// <see cref="PlaceConditionalOrderAsync"/>. Sending one here fails with
+    /// <see cref="TradeErrorCodes.ConditionalOrderPathRequired"/>, which names the method to call instead
+    /// rather than surfacing as an uninformative "invalid parameter".
     /// </para>
     /// </remarks>
     Task<Result<Order>> PlaceOrderAsync(OrderRequest request, CancellationToken cancellationToken = default);
