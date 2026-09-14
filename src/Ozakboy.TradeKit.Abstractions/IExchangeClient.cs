@@ -321,4 +321,69 @@ public interface IExchangeClient : IExchangeInfoProvider
         string symbol,
         MarginMode marginMode,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 查詢帳戶在某個商品上的成交紀錄。
+    /// Lists the account's own fills on one symbol.
+    /// </summary>
+    /// <param name="symbol">交易對代碼,必填。The symbol; required.</param>
+    /// <param name="since">
+    /// 起點時刻(UTC 語意),只回傳這個時刻之後的成交;與 <paramref name="fromId"/> 擇一。
+    /// The starting instant in UTC semantics; only fills at or after it are returned. Mutually exclusive with
+    /// <paramref name="fromId"/>.
+    /// </param>
+    /// <param name="fromId">
+    /// 起點成交編號,只回傳編號不小於它的成交;與 <paramref name="since"/> 擇一。
+    /// The starting trade id; only fills with an id at or above it are returned. Mutually exclusive with
+    /// <paramref name="since"/>.
+    /// </param>
+    /// <param name="limit">
+    /// 單次回傳的筆數上限,上限值由交易所決定;<see langword="null"/> 代表交由交易所取預設值。
+    /// The maximum number of fills in one response, capped by the exchange; <see langword="null"/> leaves the
+    /// exchange's own default in place.
+    /// </param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>
+    /// 成交清單,或失敗原因。查無成交是成功的空清單,不是失敗。
+    /// The fills, or the reason it failed. Finding none is an empty list rather than a failure.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>這個方法存在的理由是對帳,不是顯示歷史。</b>成交平常由私有串流的
+    /// <see cref="IUserDataFeed.SubscribeTradeUpdatesAsync"/> 推過來,而串流會斷 ——
+    /// 斷線期間發生的成交沒有任何人補,部位與已實現損益就從那一刻起一路錯下去,畫面上完全看不出來。
+    /// 引擎因此定期(例如每 5 分鐘)以及每次串流中斷重連之後,拿<b>本地最後一筆成交的時間</b>當
+    /// <paramref name="since"/> 回頭補查,把漏收的補齊。
+    /// <b>This exists for reconciliation rather than for showing history.</b> Fills normally arrive on
+    /// <see cref="IUserDataFeed.SubscribeTradeUpdatesAsync"/>, and that stream drops. Nothing else backfills the
+    /// fills that happened while it was down, so the position and the realised P&amp;L stay wrong from that moment
+    /// on with nothing on screen to show it. The engine therefore sweeps periodically — every five minutes, say —
+    /// and again after every reconnection, passing <b>the timestamp of the last fill it holds locally</b> as
+    /// <paramref name="since"/>.
+    /// </para>
+    /// <para>
+    /// 補查回來的成交<b>一定會與已收到的重疊</b>,因為起點取的是最後一筆的時間本身而不是它之後一瞬間 ——
+    /// 同一毫秒內的第二筆成交一旦被跳過就永遠補不回來。呼叫端必須以
+    /// <see cref="Trade.TradeId"/> 去重,不可以假設回傳的每一筆都是新的。
+    /// A sweep <b>always overlaps</b> with what has already been received, because the cursor is the last fill's
+    /// own timestamp rather than an instant after it: a second fill inside that same millisecond would otherwise
+    /// be skipped for good. Callers must de-duplicate on <see cref="Trade.TradeId"/> and must not assume every
+    /// returned fill is new.
+    /// </para>
+    /// <para>
+    /// <paramref name="since"/> 與 <paramref name="fromId"/> 只能給一個,兩個都給是失敗而不是其中一個被忽略 ——
+    /// 交易所對這個組合的處理各家不同,靜默挑一個用會讓補查的起點不是呼叫端以為的那一個。
+    /// 兩個都不給時由交易所決定範圍,而那個範圍通常只涵蓋最近幾天。
+    /// Exactly one of <paramref name="since"/> and <paramref name="fromId"/> may be supplied; giving both fails
+    /// rather than quietly ignoring one, because exchanges differ on that combination and silently picking one
+    /// makes the sweep start somewhere the caller did not choose. Supplying neither leaves the range to the
+    /// exchange, which typically covers only the last few days.
+    /// </para>
+    /// </remarks>
+    Task<Result<IReadOnlyList<Trade>>> GetUserTradesAsync(
+        string symbol,
+        DateTimeOffset? since = null,
+        long? fromId = null,
+        int? limit = null,
+        CancellationToken cancellationToken = default);
 }

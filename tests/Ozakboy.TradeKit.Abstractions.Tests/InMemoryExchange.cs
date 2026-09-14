@@ -287,6 +287,42 @@ internal sealed class InMemoryExchange : IExchangeClient, IMarketDataFeed, IUser
         CancellationToken cancellationToken = default) =>
         Task.FromResult(Result.Success());
 
+    public Task<Result<IReadOnlyList<Trade>>> GetUserTradesAsync(
+        string symbol,
+        DateTimeOffset? since = null,
+        long? fromId = null,
+        int? limit = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (since is not null && fromId is not null)
+        {
+            return Task.FromResult(Result.Failure<IReadOnlyList<Trade>>(TradeErrors.InvalidQuery(
+                "since 與 fromId 只能擇一。Supply either since or fromId, not both.")));
+        }
+
+        var matches = _trades.Where(trade => string.Equals(trade.Symbol, symbol, StringComparison.Ordinal));
+
+        if (since is { } from)
+        {
+            matches = matches.Where(trade => trade.ExecutedAt >= from);
+        }
+
+        if (fromId is { } startId)
+        {
+            matches = matches.Where(trade =>
+                long.TryParse(trade.TradeId, System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out var id)
+                && id >= startId);
+        }
+
+        if (limit is { } take)
+        {
+            matches = matches.Take(take);
+        }
+
+        return Task.FromResult(Result.Success<IReadOnlyList<Trade>>([.. matches]));
+    }
+
     public Task<Result<IReadOnlyList<Kline>>> GetKlinesAsync(
         KlineQuery query,
         CancellationToken cancellationToken = default)

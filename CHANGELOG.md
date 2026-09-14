@@ -79,6 +79,26 @@ silently failed to be placed is the one failure this abstraction layer must not 
   "Conditional order not found" deliberately does not share a code with "order not found": sharing leaves callers
   unable to tell "the stop is gone" from "the entry is gone", and the first of those means a position is
   currently unprotected.
+- **`IExchangeClient.GetUserTradesAsync(symbol, since, fromId, limit, cancellationToken)`**:查詢帳戶在某個
+  商品上的成交紀錄,`since`(UTC)與 `fromId` 擇一當起點,兩個都給是失敗而不是靜默挑一個,`limit` 的上限
+  由交易所決定。它是給**對帳**用的,不是給畫面看歷史用的:成交平常由
+  `IUserDataFeed.SubscribeTradeUpdatesAsync` 推過來,而串流會斷 —— 斷線期間的成交沒有任何人補,部位與
+  已實現損益就從那一刻起一路錯下去,而畫面與日誌都看不出來。引擎定期(例如每 5 分鐘)以及每次重連之後,
+  以本地最後一筆成交的時間當起點回頭補查。補查**一定會與已收到的重疊**,因為起點取的是那一筆的時間本身
+  而不是之後一瞬間 —— 同一毫秒內的第二筆成交一旦被跳過就永遠補不回來,所以呼叫端必須以 `Trade.TradeId` 去重。
+  A query for the account's own fills on one symbol, taking either `since` (UTC) or `fromId` as its cursor —
+  supplying both fails rather than silently picking one — with `limit` capped by the exchange. It exists for
+  **reconciliation**, not for displaying history: fills normally arrive on
+  `IUserDataFeed.SubscribeTradeUpdatesAsync`, that stream drops, and nothing else backfills what happened while
+  it was down, so the position and the realised P&L stay wrong from then on with nothing on screen to show it.
+  The engine sweeps periodically and after every reconnection, starting from the timestamp of the last fill it
+  holds. A sweep **always overlaps** with what was already received, because the cursor is that fill's own
+  timestamp rather than an instant after it — a second fill inside the same millisecond would otherwise be lost
+  for good — so callers must de-duplicate on `Trade.TradeId`.
+
+  `Trade` 本身沒有變動:對帳需要的欄位它原本就齊了(`TradeId`、`ExchangeOrderId`、`Side`、`Price`、
+  `Quantity`、`Fee` + `FeeAsset`、`RealizedPnl`、`IsMaker`、`ExecutedAt`)。
+  `Trade` is unchanged: it already carries everything reconciliation needs.
 
 ### 破壞性變更 / Breaking
 
@@ -91,6 +111,10 @@ silently failed to be placed is the one failure this abstraction layer must not 
   Adding members to an interface breaks every existing implementation: a backtest matcher and any custom client
   must supply all five. The XML docs on `PlaceConditionalOrderAsync` spell out the matcher semantics, including
   that a backtest holding only traded prices **must say so rather than passing them off as mark prices**.
+- **`IExchangeClient` 另新增 `GetUserTradesAsync`**(見上)。同樣是介面新增成員,自訂實作與回測撮合器
+  都要補上;撮合器本來就有每一筆成交的完整資料,補的是一個對自己那份清單的過濾。
+  Another added member, so custom clients and backtest matchers must supply it too. A matcher already holds every
+  fill it produced, so what it supplies is a filter over its own list.
 - **`IUserDataFeed` 新增 `SubscribeConditionalOrderUpdatesAsync`**。條件單的狀態變化**不會**出現在
   `SubscribeOrderUpdatesAsync`,只訂閱委託更新的話,「停損被觸發了」這件事會整個消失。
   Conditional order state changes do **not** appear on `SubscribeOrderUpdatesAsync`; subscribing only to order

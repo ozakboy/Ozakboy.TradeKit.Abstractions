@@ -449,4 +449,49 @@ public sealed class InMemoryExchangeTests
             Assert.Fail("沒有觸發的條件單不應該在委託串流上出現。");
         }
     }
+
+    [TestMethod]
+    public async Task 成交紀錄查得回來而且起點只能給一個()
+    {
+        // 對帳補查的介面同樣要能由純記憶體實作滿足:串流斷線期間漏收的成交,只能靠這條路徑補齊。
+        var exchange = CreateExchange();
+
+        await exchange.PlaceOrderAsync(
+            new OrderRequest
+            {
+                Symbol = "BTCUSDT",
+                Side = OrderSide.Buy,
+                OrderType = OrderType.Limit,
+                Quantity = 0.01m,
+                Price = 50_000m,
+                ClientOrderId = "pt-fill-1",
+            },
+            CancellationToken.None);
+
+        var all = await exchange.GetUserTradesAsync("BTCUSDT", cancellationToken: CancellationToken.None);
+
+        Assert.IsTrue(all.TryGetValue(out var trades), all.Error?.ToString());
+        Assert.HasCount(1, trades);
+        Assert.AreEqual("BTCUSDT", trades[0].Symbol);
+        Assert.AreNotEqual(default, trades[0].ExecutedAt, "成交時間是補查的游標,不能是預設值");
+
+        // 起點取最後一筆成交的時間本身(而不是之後一瞬間),所以補查一定會把那一筆再撈回來一次。
+        // 呼叫端得靠 TradeId 去重 —— 這條斷言就是那個重疊行為的證據。
+        var resweep = await exchange.GetUserTradesAsync(
+            "BTCUSDT",
+            since: trades[0].ExecutedAt,
+            cancellationToken: CancellationToken.None);
+
+        Assert.IsTrue(resweep.TryGetValue(out var again));
+        Assert.HasCount(1, again);
+        Assert.AreEqual(trades[0].TradeId, again[0].TradeId);
+
+        var ambiguous = await exchange.GetUserTradesAsync(
+            "BTCUSDT",
+            since: Start,
+            fromId: 1L,
+            cancellationToken: CancellationToken.None);
+
+        Assert.AreEqual(TradeErrorCodes.InvalidQuery, ambiguous.Error!.Code, "兩個起點同時給要失敗,不能靜默挑一個");
+    }
 }
