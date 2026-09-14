@@ -270,4 +270,183 @@ public sealed class InMemoryExchangeTests
             Assert.Fail("純記憶體的撮合不會斷線,不應該要求對帳。");
         }
     }
+
+    [TestMethod]
+    public async Task 條件單掛上之後查得到也撤得掉()
+    {
+        var exchange = CreateExchange();
+        var request = new ConditionalOrderRequest
+        {
+            Symbol = "BTCUSDT",
+            Side = OrderSide.Sell,
+            ConditionalOrderType = ConditionalOrderType.StopMarket,
+            Quantity = 0.0125m,
+            TriggerPrice = 48_000.17m,
+            ReduceOnly = true,
+            ClientConditionalOrderId = "pt-stop-1",
+        };
+
+        var placed = await exchange.PlaceConditionalOrderAsync(request, CancellationToken.None);
+
+        Assert.IsTrue(placed.TryGetValue(out var conditionalOrder), placed.Error?.ToString());
+        Assert.AreEqual(ConditionalOrderStatus.New, conditionalOrder.Status);
+        Assert.AreEqual(48_000.2m, conditionalOrder.TriggerPrice, "觸發價應被對齊到跳動點");
+        Assert.AreEqual(0.012m, conditionalOrder.Quantity, "數量應被向下校正");
+        Assert.IsNull(conditionalOrder.TriggeredOrderId, "還沒觸發就不該有實際委託編號");
+
+        var found = await exchange.GetConditionalOrderAsync(
+            "BTCUSDT",
+            ConditionalOrderIdentifier.FromClientId("pt-stop-1"),
+            CancellationToken.None);
+
+        Assert.IsTrue(found.TryGetValue(out var fetched), found.Error?.ToString());
+        Assert.AreEqual(conditionalOrder.ExchangeConditionalOrderId, fetched.ExchangeConditionalOrderId);
+
+        var open = await exchange.GetOpenConditionalOrdersAsync("BTCUSDT", CancellationToken.None);
+
+        Assert.IsTrue(open.TryGetValue(out var openList));
+        Assert.HasCount(1, openList);
+
+        var cancelled = await exchange.CancelConditionalOrderAsync(
+            "BTCUSDT",
+            ConditionalOrderIdentifier.FromExchangeId(conditionalOrder.ExchangeConditionalOrderId!),
+            CancellationToken.None);
+
+        Assert.IsTrue(cancelled.TryGetValue(out var canceledOrder), cancelled.Error?.ToString());
+        Assert.AreEqual(ConditionalOrderStatus.Canceled, canceledOrder.Status);
+
+        var remaining = await exchange.GetOpenConditionalOrdersAsync("BTCUSDT", CancellationToken.None);
+
+        Assert.IsTrue(remaining.TryGetValue(out var remainingList));
+        Assert.IsEmpty(remainingList);
+    }
+
+    [TestMethod]
+    public async Task 條件單查不到時回的是條件單專屬的錯誤碼()
+    {
+        var exchange = CreateExchange();
+
+        var missing = await exchange.GetConditionalOrderAsync(
+            "BTCUSDT",
+            ConditionalOrderIdentifier.FromClientId("沒掛過"),
+            CancellationToken.None);
+
+        Assert.AreEqual(TradeErrorCodes.ConditionalOrderNotFound, missing.Error!.Code);
+    }
+
+    [TestMethod]
+    public async Task 條件單類型送到一般下單端點會被擋下()
+    {
+        var exchange = CreateExchange();
+
+        var placed = await exchange.PlaceOrderAsync(
+            new OrderRequest
+            {
+                Symbol = "BTCUSDT",
+                Side = OrderSide.Sell,
+                OrderType = OrderType.StopMarket,
+                Quantity = 0.01m,
+                StopPrice = 48_000m,
+            },
+            CancellationToken.None);
+
+        Assert.IsTrue(placed.IsFailure);
+        Assert.AreEqual(TradeErrorCodes.ConditionalOrderPathRequired, placed.Error!.Code);
+    }
+
+    [TestMethod]
+    public async Task 一次撤掉某商品的全部條件單()
+    {
+        var exchange = CreateExchange();
+
+        foreach (var index in Enumerable.Range(1, 3))
+        {
+            var placed = await exchange.PlaceConditionalOrderAsync(
+                new ConditionalOrderRequest
+                {
+                    Symbol = "BTCUSDT",
+                    Side = OrderSide.Sell,
+                    ConditionalOrderType = ConditionalOrderType.StopMarket,
+                    Quantity = 0.01m,
+                    TriggerPrice = 48_000m - index,
+                    ReduceOnly = true,
+                    ClientConditionalOrderId = $"pt-stop-{index}",
+                },
+                CancellationToken.None);
+
+            Assert.IsTrue(placed.IsSuccess, placed.Error?.ToString());
+        }
+
+        Assert.IsTrue((await exchange.CancelAllConditionalOrdersAsync("BTCUSDT", CancellationToken.None)).IsSuccess);
+
+        var remaining = await exchange.GetOpenConditionalOrdersAsync(cancellationToken: CancellationToken.None);
+
+        Assert.IsTrue(remaining.TryGetValue(out var remainingList));
+        Assert.IsEmpty(remainingList);
+    }
+
+    [TestMethod]
+    public async Task 重複的用戶端條件單編號會被擋下()
+    {
+        var exchange = CreateExchange();
+        var request = new ConditionalOrderRequest
+        {
+            Symbol = "BTCUSDT",
+            Side = OrderSide.Sell,
+            ConditionalOrderType = ConditionalOrderType.StopMarket,
+            Quantity = 0.01m,
+            TriggerPrice = 48_000m,
+            ReduceOnly = true,
+            ClientConditionalOrderId = "pt-stop-dup",
+        };
+
+        Assert.IsTrue((await exchange.PlaceConditionalOrderAsync(request, CancellationToken.None)).IsSuccess);
+
+        var second = await exchange.PlaceConditionalOrderAsync(request, CancellationToken.None);
+
+        Assert.AreEqual(TradeErrorCodes.DuplicateClientConditionalOrderId, second.Error!.Code);
+    }
+
+    [TestMethod]
+    public async Task 條件單的狀態變化由專屬串流送出()
+    {
+        var exchange = CreateExchange();
+
+        await exchange.PlaceConditionalOrderAsync(
+            new ConditionalOrderRequest
+            {
+                Symbol = "BTCUSDT",
+                Side = OrderSide.Sell,
+                ConditionalOrderType = ConditionalOrderType.StopMarket,
+                Quantity = 0.01m,
+                TriggerPrice = 48_000m,
+                ReduceOnly = true,
+                ClientConditionalOrderId = "pt-stop-stream",
+            },
+            CancellationToken.None);
+
+        await exchange.CancelConditionalOrderAsync(
+            "BTCUSDT",
+            ConditionalOrderIdentifier.FromClientId("pt-stop-stream"),
+            CancellationToken.None);
+
+        var statuses = new List<ConditionalOrderStatus>();
+
+        await foreach (var item in exchange.SubscribeConditionalOrderUpdatesAsync(CancellationToken.None))
+        {
+            Assert.IsTrue(item.TryGetValue(out var update));
+            statuses.Add(update.ConditionalOrder.Status);
+        }
+
+        CollectionAssert.AreEqual(
+            new[] { ConditionalOrderStatus.New, ConditionalOrderStatus.Canceled },
+            statuses,
+            "條件單的狀態變化不會出現在委託更新串流,必須由這條專屬串流送出");
+
+        // 委託更新串流不該混進條件單:這張停損從頭到尾沒有觸發,也就不該產生任何一般委託。
+        await foreach (var _ in exchange.SubscribeOrderUpdatesAsync(CancellationToken.None))
+        {
+            Assert.Fail("沒有觸發的條件單不應該在委託串流上出現。");
+        }
+    }
 }

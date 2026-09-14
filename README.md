@@ -86,21 +86,39 @@ opaque "invalid parameter".
 ## What is in the box
 
 **Enums** — `OrderSide`, `PositionSide`, `OrderType`, `TimeInForce`, `OrderStatus`, `KlineInterval`, `MarginMode`,
-`TriggerPriceType`, `PriceRounding`.
+`TriggerPriceType`, `PriceRounding`, `ConditionalOrderType`, `ConditionalOrderStatus`.
 
 **Models** — `SymbolInfo` (identity plus trading rules and the normalisation methods), `OrderRequest`, `Order`,
 `OrderIdentifier`, `Position`, `Balance`, `AccountSnapshot`, `Kline`, `KlineQuery`, `Trade`, `MarkPriceUpdate`,
 `NormalizedOrderSize`, `AccountUpdate` (a **delta**, not a snapshot, built from `PositionChange` and
 `BalanceChange`, which carry only what the event delivers), `MarginCall` (with `MarginCallPosition`),
-`ResyncRequired`.
+`ResyncRequired`, and the conditional order set: `ConditionalOrderRequest`, `ConditionalOrder`,
+`ConditionalOrderUpdate`, `ConditionalOrderIdentifier`.
 
-**Interfaces** — `IExchangeInfoProvider` (symbols, server time), `IExchangeClient` (account, positions, orders),
-`IMarketDataFeed` (historical klines, live klines and mark prices), `IUserDataFeed` (orders, fills, account
-changes, margin calls, and the signal that local state must be reconciled in full).
+**Interfaces** — `IExchangeInfoProvider` (symbols, server time), `IExchangeClient` (account, positions, orders,
+conditional orders), `IMarketDataFeed` (historical klines, live klines and mark prices), `IUserDataFeed` (orders,
+conditional orders, fills, account changes, margin calls, and the signal that local state must be reconciled in
+full).
 
 **Error codes** — `TradeErrorCodes` holds the neutral codes (`trade.order_not_found`, `trade.notional_below_min`,
 `trade.rate_limited`, …) and `TradeErrors` builds the corresponding `Error` values. Mapping an exchange's own codes
 onto this set is the implementation package's job, so that no strategy ever contains `if (code == -2011)`.
+
+### Conditional orders travel their own path
+
+Stops, take-profits, and trailing stops go through `PlaceConditionalOrderAsync`, not `PlaceOrderAsync` — exchanges
+have moved them onto a separate service with their own numbering, cancellation endpoint, and state machine, and
+the plain order endpoint rejects those types outright.
+
+Three consequences that are easy to miss:
+
+* `GetOpenOrdersAsync` does not see them. Reconciling with it alone concludes "no resting orders" while the stops
+  sit safely on the other path — or are genuinely missing, which looks identical.
+* `SubscribeOrderUpdatesAsync` does not carry them. A stop triggering is visible only on
+  `SubscribeConditionalOrderUpdatesAsync`; what reaches the order stream is the fill of the order the trigger
+  produced, linked back only through `ConditionalOrder.TriggeredOrderId`.
+* `CancelAllOrdersAsync` does not cancel them. An emergency exit calls `CancelAllConditionalOrdersAsync` too,
+  because a stop left behind after the position closes opens a new one in the opposite direction.
 
 ### Streams are `IAsyncEnumerable<Result<T>>`
 

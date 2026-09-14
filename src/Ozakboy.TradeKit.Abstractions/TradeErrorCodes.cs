@@ -119,6 +119,51 @@ public static class TradeErrorCodes
     public const string OrderNotCancelable = "trade.order_not_cancelable";
 
     /// <summary>
+    /// 找不到這張條件單。
+    /// The conditional order does not exist.
+    /// </summary>
+    /// <remarks>
+    /// 與 <see cref="OrderNotFound"/> 分開,因為條件單與一般委託在交易所是兩套獨立的編號:
+    /// 共用一個代碼,上層就分不出「停損不見了」與「進場單不見了」,而前者代表部位正在裸奔。
+    /// Separate from <see cref="OrderNotFound"/> because conditional orders and ordinary orders use independent
+    /// numbering at the exchange. Sharing one code leaves callers unable to tell "the stop is gone" from "the
+    /// entry is gone", and the first of those means a position is currently unprotected.
+    /// </remarks>
+    public const string ConditionalOrderNotFound = "trade.conditional_order_not_found";
+
+    /// <summary>
+    /// 條件單被交易所拒絕。
+    /// The exchange rejected the conditional order.
+    /// </summary>
+    public const string ConditionalOrderRejected = "trade.conditional_order_rejected";
+
+    /// <summary>
+    /// 用戶端條件單編號重複。冪等送單時代表這張條件單先前已經送出過。
+    /// The client conditional order id already exists; under idempotent submission this means the conditional
+    /// order was already sent.
+    /// </summary>
+    public const string DuplicateClientConditionalOrderId = "trade.duplicate_client_conditional_order_id";
+
+    /// <summary>
+    /// 掛著的條件單數量已達交易所上限。
+    /// The exchange's limit on open conditional orders has been reached.
+    /// </summary>
+    public const string ConditionalOrderLimitExceeded = "trade.conditional_order_limit_exceeded";
+
+    /// <summary>
+    /// 這個委託類型必須走條件單的路徑,送到一般下單端點會被交易所拒絕。
+    /// This order type must go through the conditional order path; the plain order endpoint rejects it.
+    /// </summary>
+    /// <remarks>
+    /// 交易所把條件單搬到獨立服務之後,舊的下單端點對停損與停利一律拒單。這個代碼存在的目的是讓那個拒絕
+    /// 當場說清楚該改呼叫哪一個方法,而不是回一句看不出原因的「參數不合法」。
+    /// Once an exchange moves conditional orders to a separate service, its plain order endpoint rejects every
+    /// stop and take-profit. This code exists so that the rejection says which method to call instead, rather
+    /// than surfacing as an uninformative "invalid parameter".
+    /// </remarks>
+    public const string ConditionalOrderPathRequired = "trade.conditional_order_path_required";
+
+    /// <summary>
     /// 找不到這個商品的持倉。
     /// No position exists for the symbol.
     /// </summary>

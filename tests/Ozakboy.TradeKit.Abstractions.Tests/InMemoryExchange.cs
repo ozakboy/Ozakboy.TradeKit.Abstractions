@@ -16,6 +16,8 @@ internal sealed class InMemoryExchange : IExchangeClient, IMarketDataFeed, IUser
 {
     private readonly Dictionary<string, SymbolInfo> _symbols;
     private readonly Dictionary<string, Order> _orders = [];
+    private readonly Dictionary<string, ConditionalOrder> _conditionalOrders = [];
+    private readonly List<ConditionalOrderUpdate> _conditionalOrderUpdates = [];
     private readonly Dictionary<string, Position> _positions = [];
     private readonly List<Trade> _trades = [];
     private readonly List<Kline> _klines;
@@ -57,6 +59,14 @@ internal sealed class InMemoryExchange : IExchangeClient, IMarketDataFeed, IUser
     public Task<Result<Order>> PlaceOrderAsync(OrderRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        // 條件單走 PlaceConditionalOrderAsync,與真實交易所一致:這條路徑拒絕條件單類型。
+        // Conditional types are rejected here exactly as a real exchange rejects them.
+        if (request.OrderType is OrderType.StopMarket or OrderType.StopLimit
+            or OrderType.TakeProfitMarket or OrderType.TakeProfitLimit or OrderType.TrailingStopMarket)
+        {
+            return Task.FromResult(Result.Failure<Order>(TradeErrors.ConditionalOrderPathRequired(request.OrderType)));
+        }
 
         if (!_symbols.TryGetValue(request.Symbol, out var symbol))
         {
@@ -152,6 +162,122 @@ internal sealed class InMemoryExchange : IExchangeClient, IMarketDataFeed, IUser
         CancellationToken cancellationToken = default) =>
         Task.FromResult(Result.Success<IReadOnlyList<Order>>([]));
 
+    public Task<Result<ConditionalOrder>> PlaceConditionalOrderAsync(
+        ConditionalOrderRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (!_symbols.TryGetValue(request.Symbol, out var symbol))
+        {
+            return Task.FromResult(Result.Failure<ConditionalOrder>(TradeErrors.SymbolNotFound(request.Symbol)));
+        }
+
+        var normalization = request.NormalizeFor(symbol);
+
+        if (!normalization.TryGetValue(out var normalized))
+        {
+            return Task.FromResult(Result.Failure<ConditionalOrder>(normalization.Error!));
+        }
+
+        var clientId = normalized.ClientConditionalOrderId ?? $"sim-algo-{_conditionalOrders.Count + 1}";
+
+        if (_conditionalOrders.ContainsKey(clientId))
+        {
+            return Task.FromResult(Result.Failure<ConditionalOrder>(new Error(
+                TradeErrorCodes.DuplicateClientConditionalOrderId,
+                "重複的用戶端條件單編號。Duplicate client conditional order id.",
+                ErrorCategory.Conflict)));
+        }
+
+        // 這個假交易所不推進行情,所以條件單永遠停在等待觸發 —— 正是回測撮合器在觸發價被穿越之前的狀態。
+        // This fake exchange never advances the market, so the conditional order rests at New: exactly where a
+        // backtest matcher holds it until the trigger price is crossed.
+        var conditionalOrder = new ConditionalOrder
+        {
+            Symbol = normalized.Symbol,
+            ClientConditionalOrderId = clientId,
+            ExchangeConditionalOrderId = (_conditionalOrders.Count + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Side = normalized.Side,
+            ConditionalOrderType = normalized.ConditionalOrderType,
+            Status = ConditionalOrderStatus.New,
+            PositionSide = normalized.PositionSide,
+            Quantity = normalized.Quantity,
+            TriggerPrice = normalized.TriggerPrice,
+            TriggerPriceType = normalized.TriggerPriceType,
+            Price = normalized.Price,
+            TimeInForce = normalized.TimeInForce,
+            CallbackRate = normalized.CallbackRate,
+            ActivationPrice = normalized.ActivationPrice,
+            ReduceOnly = normalized.ReduceOnly,
+            ClosePosition = normalized.ClosePosition,
+            CreatedAt = _now,
+            UpdatedAt = _now,
+        };
+
+        _conditionalOrders[clientId] = conditionalOrder;
+        _conditionalOrderUpdates.Add(new ConditionalOrderUpdate
+        {
+            ConditionalOrder = conditionalOrder,
+            RawStatus = "NEW",
+            Timestamp = _now,
+        });
+
+        return Task.FromResult(Result.Success(conditionalOrder));
+    }
+
+    public Task<Result<ConditionalOrder>> CancelConditionalOrderAsync(
+        string symbol,
+        ConditionalOrderIdentifier identifier,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryFindConditionalOrder(identifier, out var found))
+        {
+            return Task.FromResult(Result.Failure<ConditionalOrder>(TradeErrors.ConditionalOrderNotFound(identifier)));
+        }
+
+        var canceled = found with { Status = ConditionalOrderStatus.Canceled, UpdatedAt = _now };
+
+        _conditionalOrders[canceled.ClientConditionalOrderId] = canceled;
+        _conditionalOrderUpdates.Add(new ConditionalOrderUpdate
+        {
+            ConditionalOrder = canceled,
+            RawStatus = "CANCELED",
+            Timestamp = _now,
+        });
+
+        return Task.FromResult(Result.Success(canceled));
+    }
+
+    public Task<Result<ConditionalOrder>> GetConditionalOrderAsync(
+        string symbol,
+        ConditionalOrderIdentifier identifier,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(TryFindConditionalOrder(identifier, out var found)
+            ? Result.Success(found)
+            : Result.Failure<ConditionalOrder>(TradeErrors.ConditionalOrderNotFound(identifier)));
+
+    public Task<Result<IReadOnlyList<ConditionalOrder>>> GetOpenConditionalOrdersAsync(
+        string? symbol = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(Result.Success<IReadOnlyList<ConditionalOrder>>(
+        [
+            .. _conditionalOrders.Values.Where(order => order.IsOpen
+                && (symbol is null || string.Equals(order.Symbol, symbol, StringComparison.Ordinal))),
+        ]));
+
+    public Task<Result> CancelAllConditionalOrdersAsync(string symbol, CancellationToken cancellationToken = default)
+    {
+        foreach (var order in _conditionalOrders.Values.Where(order =>
+            order.IsOpen && string.Equals(order.Symbol, symbol, StringComparison.Ordinal)).ToList())
+        {
+            _conditionalOrders[order.ClientConditionalOrderId] =
+                order with { Status = ConditionalOrderStatus.Canceled, UpdatedAt = _now };
+        }
+
+        return Task.FromResult(Result.Success());
+    }
+
     public Task<Result> SetLeverageAsync(string symbol, int leverage, CancellationToken cancellationToken = default) =>
         Task.FromResult(Result.Success());
 
@@ -234,6 +360,17 @@ internal sealed class InMemoryExchange : IExchangeClient, IMarketDataFeed, IUser
         }
     }
 
+    public async IAsyncEnumerable<Result<ConditionalOrderUpdate>> SubscribeConditionalOrderUpdatesAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        foreach (var update in _conditionalOrderUpdates)
+        {
+            await Task.CompletedTask.ConfigureAwait(false);
+
+            yield return update;
+        }
+    }
+
     public async IAsyncEnumerable<Result<AccountUpdate>> SubscribeAccountUpdatesAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
@@ -273,6 +410,28 @@ internal sealed class InMemoryExchange : IExchangeClient, IMarketDataFeed, IUser
     public IAsyncEnumerable<Result<ResyncRequired>> SubscribeResyncSignalsAsync(
         CancellationToken cancellationToken = default) =>
         AsyncEnumerable.Empty<Result<ResyncRequired>>();
+
+    private bool TryFindConditionalOrder(ConditionalOrderIdentifier identifier, out ConditionalOrder found)
+    {
+        foreach (var order in _conditionalOrders.Values)
+        {
+            var matchesClient = identifier.ClientConditionalOrderId is { } clientId
+                && string.Equals(order.ClientConditionalOrderId, clientId, StringComparison.Ordinal);
+            var matchesExchange = identifier.ExchangeConditionalOrderId is { } exchangeId
+                && string.Equals(order.ExchangeConditionalOrderId, exchangeId, StringComparison.Ordinal);
+
+            if (matchesClient || matchesExchange)
+            {
+                found = order;
+
+                return true;
+            }
+        }
+
+        found = null!;
+
+        return false;
+    }
 
     private void ApplyFill(Order order, decimal fillPrice)
     {

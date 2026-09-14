@@ -83,20 +83,36 @@ else
 ## 內容一覽
 
 **列舉** — `OrderSide`、`PositionSide`、`OrderType`、`TimeInForce`、`OrderStatus`、`KlineInterval`、
-`MarginMode`、`TriggerPriceType`、`PriceRounding`。
+`MarginMode`、`TriggerPriceType`、`PriceRounding`、`ConditionalOrderType`、`ConditionalOrderStatus`。
 
 **模型** — `SymbolInfo`(識別資料、交易規則與校正方法)、`OrderRequest`、`Order`、`OrderIdentifier`、
 `Position`、`Balance`、`AccountSnapshot`、`Kline`、`KlineQuery`、`Trade`、`MarkPriceUpdate`、
 `NormalizedOrderSize`、`AccountUpdate`(**增量**,不是快照;由只含事件實際欄位的 `PositionChange` 與
-`BalanceChange` 組成)、`MarginCall`(內含 `MarginCallPosition`)、`ResyncRequired`。
+`BalanceChange` 組成)、`MarginCall`(內含 `MarginCallPosition`)、`ResyncRequired`,以及條件單這一組:
+`ConditionalOrderRequest`、`ConditionalOrder`、`ConditionalOrderUpdate`、`ConditionalOrderIdentifier`。
 
-**介面** — `IExchangeInfoProvider`(商品與伺服器時間)、`IExchangeClient`(帳戶、持倉、委託)、
-`IMarketDataFeed`(歷史 K 線、即時 K 線與標記價)、`IUserDataFeed`(委託、成交、帳戶變動、保證金追繳,
-以及「本地狀態不可信,請全量對帳」的訊號)。
+**介面** — `IExchangeInfoProvider`(商品與伺服器時間)、`IExchangeClient`(帳戶、持倉、委託、條件單)、
+`IMarketDataFeed`(歷史 K 線、即時 K 線與標記價)、`IUserDataFeed`(委託、條件單、成交、帳戶變動、
+保證金追繳,以及「本地狀態不可信,請全量對帳」的訊號)。
 
 **錯誤代碼** — `TradeErrorCodes` 放中立的代碼(`trade.order_not_found`、`trade.notional_below_min`、
 `trade.rate_limited` 等),`TradeErrors` 負責建立對應的 `Error`。把交易所自家的錯誤碼對映到這一組是
 實作套件的責任,如此策略裡才不會出現 `if (code == -2011)`。
+
+### 條件單走的是另一條路
+
+停損、停利與移動停損走 `PlaceConditionalOrderAsync`,不走 `PlaceOrderAsync` —— 交易所已經把它們搬到
+獨立的服務底下,編號自成一套、撤單端點不同、狀態機也不一樣,舊的下單端點對這幾個型別一律拒單。
+
+三個容易漏掉的後果:
+
+* `GetOpenOrdersAsync` 看不到它們。只用它對帳會得到「沒有任何掛單」的結論,而停損其實好端端地掛在
+  另一條路徑上 —— 或者根本不在,兩者長得一模一樣。
+* `SubscribeOrderUpdatesAsync` 不帶它們。停損被觸發這件事只出現在
+  `SubscribeConditionalOrderUpdatesAsync`;流到委託串流上的是觸發之後那張委託的成交,
+  兩者之間要靠 `ConditionalOrder.TriggeredOrderId` 才接得回去。
+* `CancelAllOrdersAsync` 撤不掉它們。緊急出場要一併呼叫 `CancelAllConditionalOrdersAsync`,
+  否則平倉之後留下來的那張停損會反手開出一個沒人要的反向部位。
 
 ### 串流採用 `IAsyncEnumerable<Result<T>>`
 

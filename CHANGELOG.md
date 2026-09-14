@@ -8,6 +8,88 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-09-14
+
+條件單(停損、停利、移動停損)先前只是 `OrderType` 上的幾個列舉值,與一般委託共用 `PlaceOrderAsync`。
+交易所已經不是這樣看它了:條件單被移到獨立的服務底下,編號自成一套、撤單端點不同、狀態機也不一樣,
+舊的下單端點對這幾個型別一律拒單。本版把這條路徑獨立出來 —— 停損掛不上去而沒被發現,是這套抽象層
+最不能容許的失敗。
+Conditional orders — stops, take-profits, trailing stops — used to be a few members of `OrderType` sharing
+`PlaceOrderAsync` with ordinary orders. Exchanges no longer see them that way: they have been moved to a separate
+service with their own numbering, a different cancellation endpoint, and a different state machine, and the old
+order endpoint now rejects those types outright. This release gives that path its own surface — a stop that
+silently failed to be placed is the one failure this abstraction layer must not allow.
+
+### 新增功能 / Added
+
+- **`ConditionalOrderRequest`**:條件單的下單請求。觸發價、觸發價基準、數量或全部平倉、只減倉、
+  觸發後的限價與有效期限、移動停損的回撤比例與啟動價、`ClientConditionalOrderId`。
+  與 `OrderRequest` 一樣有本地的 `Validate()` 與 `NormalizeFor()`,後者會把**觸發價、委託價與啟動價
+  一併對齊到跳動點** —— 觸發價沒對齊一樣會被拒單,而停損被拒單是最不該發生的那一種。
+  The conditional order request, with local `Validate()` and `NormalizeFor()` as on `OrderRequest`. The latter
+  aligns **the trigger price, the limit price, and the activation price** to the tick size: an unaligned trigger
+  price is rejected like any other, and a rejected stop is the one rejection that must not happen.
+- **`ConditionalOrder`**:條件單的狀態快照。刻意**沒有**已成交數量與均價 —— 觸發之前沒有成交可言,
+  觸發之後成交屬於 `TriggeredOrderId` 指向的那張委託。擺一組恆為 0 的成交欄位在這裡,
+  只會讓「還沒觸發」與「觸發了但沒成交」看起來一模一樣。
+  A snapshot of a conditional order, deliberately **without** fill quantity or average price: before the trigger
+  there is nothing to fill, and afterwards the fills belong to the order named by `TriggeredOrderId`. Permanently
+  zero fill fields here would make "not triggered yet" and "triggered but unfilled" look identical.
+- **`ConditionalOrderUpdate`**:私有串流送出的條件單狀態變化。除了快照之外還帶 `RawStatus` 與
+  `RejectReason` —— 停損被交易所拒絕是會出人命的事(以為有保護、其實沒有),而拒絕原因只在事件裡
+  出現一次,事後再查那張單只會得到一句「已拒絕」。
+  A conditional order state change from the private stream. Besides the snapshot it carries `RawStatus` and
+  `RejectReason`: a stop rejected by the exchange is the dangerous case — protection believed to be in place that
+  is not — and the reason appears exactly once, in the event.
+- **`ConditionalOrderType`** 與 **`ConditionalOrderStatus`**(含 `IsOpen()` / `IsFinal()` 擴充方法):
+  `Triggered` 算「仍然有效」,因為那張觸發出來的委託還沒成交完,把它當成已結束會讓緊急出場漏撤一張。
+  兩者的零值都是 `Unspecified`。
+  With `IsOpen()` / `IsFinal()` helpers. `Triggered` counts as live, because the order it produced has not
+  finished filling and treating it as done leaves that order uncancelled on an emergency exit. Both enums have
+  `Unspecified` as their zero value.
+- **`ConditionalOrderIdentifier`**:條件單專屬的識別碼(交易所編號或用戶端編號擇一)。
+  與 `OrderIdentifier` 分成兩個型別,因為條件單編號與委託編號是交易所兩套獨立的號碼 ——
+  拿停損的編號去查一般委託只會得到「找不到」,而型別分開之後那個錯誤在編譯期就過不了。
+  A dedicated identifier. It is a separate type from `OrderIdentifier` because the two numbering schemes are
+  independent at the exchange: looking a stop up through the plain order endpoint only ever returns "not found",
+  and with separate types that mistake no longer compiles.
+- **`ConditionalOrderTypeExtensions.ToOrderType()`**:把條件單類型對映回 `OrderType`,供回測撮合器
+  共用同一套成交邏輯。
+  Maps a conditional type back to `OrderType` so a backtest matcher can reuse one set of fill logic.
+- **五個中立錯誤代碼 / five neutral error codes**:`trade.conditional_order_not_found`、
+  `trade.conditional_order_rejected`、`trade.duplicate_client_conditional_order_id`、
+  `trade.conditional_order_limit_exceeded`、`trade.conditional_order_path_required`,
+  以及 `TradeErrors.ConditionalOrderNotFound()` / `TradeErrors.ConditionalOrderPathRequired()`。
+  「找不到條件單」與「找不到委託」刻意不共用代碼:共用了,上層就分不出「停損不見了」與「進場單不見了」,
+  而前者代表部位正在裸奔。
+  "Conditional order not found" deliberately does not share a code with "order not found": sharing leaves callers
+  unable to tell "the stop is gone" from "the entry is gone", and the first of those means a position is
+  currently unprotected.
+
+### 破壞性變更 / Breaking
+
+- **`IExchangeClient` 新增五個成員**:`PlaceConditionalOrderAsync`、`CancelConditionalOrderAsync`、
+  `GetConditionalOrderAsync`、`GetOpenConditionalOrdersAsync`、`CancelAllConditionalOrdersAsync`。
+  介面新增成員對既有實作是破壞性的 —— 回測撮合器與任何自訂實作都要補上這五個。
+  `PlaceConditionalOrderAsync` 的 XML 註解寫明了撮合器該怎麼實作它:條件單在 `New` 期間不佔簿上的位置、
+  不吃保證金,觸發與否由 `TriggerPriceType` 指定的價格判定,**回測資料只有成交價時必須講明,
+  不可以拿成交價冒充標記價** —— 那會讓實盤看標記價的停損在回測裡被 K 線影線掃出場。
+  Adding members to an interface breaks every existing implementation: a backtest matcher and any custom client
+  must supply all five. The XML docs on `PlaceConditionalOrderAsync` spell out the matcher semantics, including
+  that a backtest holding only traded prices **must say so rather than passing them off as mark prices**.
+- **`IUserDataFeed` 新增 `SubscribeConditionalOrderUpdatesAsync`**。條件單的狀態變化**不會**出現在
+  `SubscribeOrderUpdatesAsync`,只訂閱委託更新的話,「停損被觸發了」這件事會整個消失。
+  Conditional order state changes do **not** appear on `SubscribeOrderUpdatesAsync`; subscribing only to order
+  updates loses the fact that a stop triggered at all.
+- **`PlaceOrderAsync` 的合約收窄**:它只收非條件單。停損與停利送到這裡會被交易所拒絕,
+  實作應以 `trade.conditional_order_path_required` 先擋下來。這不是新的限制,是把交易所已經在做的事
+  寫進契約 —— 先前送得出去、但一定會拿回一個看不出原因的參數錯誤。
+  `PlaceOrderAsync` now takes non-conditional orders only. This is not a new restriction but the contract catching
+  up with what exchanges already do: the call used to go out and come back as an uninformative parameter error.
+
+仍是 0.x 階段,依既有慣例以 Minor 升版承載這次的介面變更。
+Still in 0.x, so this interface change rides a minor bump as before.
+
 ## [0.3.0] - 2026-09-12
 
 0.2.0 的 `AccountUpdate` 與 `MarginCall` 用完整的 `Position` / `Balance` 承載事件內容,但交易所的這兩個事件

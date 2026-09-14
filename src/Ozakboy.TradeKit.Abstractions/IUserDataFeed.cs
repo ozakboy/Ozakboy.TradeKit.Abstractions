@@ -3,8 +3,9 @@ using Ozakboy.Core.Abstractions;
 namespace Ozakboy.TradeKit.Abstractions;
 
 /// <summary>
-/// 帳戶私有資料的即時來源:委託狀態變化與成交明細。
-/// The live source of private account data: order state changes and fills.
+/// 帳戶私有資料的即時來源:委託與條件單的狀態變化、成交明細,以及帳戶本身的變動。
+/// The live source of private account data: order and conditional order state changes, fills, and the account's
+/// own movements.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -60,6 +61,34 @@ public interface IUserDataFeed
     /// </param>
     /// <returns>成交串流。The stream of fills.</returns>
     IAsyncEnumerable<Result<Trade>> SubscribeTradeUpdatesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 訂閱條件單的狀態變化。
+    /// Subscribes to conditional order state changes.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 條件單走的是交易所的另一條路徑,它的狀態變化<b>不會</b>出現在
+    /// <see cref="SubscribeOrderUpdatesAsync"/> 裡。只訂閱委託更新的話,「停損被觸發了」這件事會整個消失
+    /// —— 看得到的只有觸發之後生出的那張委託成交,而那張委託與原本的停損之間的關聯要靠
+    /// <see cref="ConditionalOrder.TriggeredOrderId"/> 才接得回去。
+    /// Conditional orders travel a separate path at the exchange and their state changes do <b>not</b> appear on
+    /// <see cref="SubscribeOrderUpdatesAsync"/>. Subscribing only to order updates loses the fact that a stop
+    /// triggered at all: what remains visible is the fill of the order the trigger produced, and the link back to
+    /// the stop exists only through <see cref="ConditionalOrder.TriggeredOrderId"/>.
+    /// </para>
+    /// <para>
+    /// 回測的模擬實作把撮合器判定觸發的那一刻 <c>yield return</c> 出來即可。
+    /// A backtest implementation simply yields the moment its matcher decides the trigger was crossed.
+    /// </para>
+    /// </remarks>
+    /// <param name="cancellationToken">
+    /// 取消權杖。取消即代表結束訂閱。
+    /// The cancellation token; cancelling it ends the subscription.
+    /// </param>
+    /// <returns>條件單更新串流。The stream of conditional order updates.</returns>
+    IAsyncEnumerable<Result<ConditionalOrderUpdate>> SubscribeConditionalOrderUpdatesAsync(
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 訂閱帳戶餘額與部位的變動。

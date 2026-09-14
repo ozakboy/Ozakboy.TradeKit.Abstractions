@@ -195,6 +195,35 @@ public static class TradeErrors
             $"找不到委託 {identifier}。Order {identifier} was not found.");
 
     /// <summary>
+    /// 建立「找不到條件單」的錯誤。
+    /// Creates a conditional-order-not-found failure.
+    /// </summary>
+    /// <param name="identifier">用來查詢的條件單識別碼。The identifier used for the lookup.</param>
+    /// <returns>對應的錯誤。The corresponding error.</returns>
+    public static Error ConditionalOrderNotFound(ConditionalOrderIdentifier identifier) =>
+        Error.NotFound(
+            TradeErrorCodes.ConditionalOrderNotFound,
+            $"找不到條件單 {identifier}。Conditional order {identifier} was not found.");
+
+    /// <summary>
+    /// 建立「這個委託類型必須走條件單路徑」的錯誤。
+    /// Creates a conditional-order-path-required failure.
+    /// </summary>
+    /// <param name="orderType">呼叫端送出的委託類型。The order type the caller submitted.</param>
+    /// <returns>對應的錯誤。The corresponding error.</returns>
+    /// <remarks>
+    /// 訊息刻意點名該改呼叫哪一個方法:這個錯誤幾乎都出現在「程式碼是條件單搬家以前寫的」這個情境,
+    /// 收到的人需要的是下一步怎麼做,不是再一句「不被接受」。
+    /// The message deliberately names the method to call instead. This failure almost always means the code
+    /// predates the exchange moving conditional orders, and whoever reads it needs the next step rather than
+    /// another way of saying "not accepted".
+    /// </remarks>
+    public static Error ConditionalOrderPathRequired(OrderType orderType) =>
+        Error.Validation(
+            TradeErrorCodes.ConditionalOrderPathRequired,
+            $"{orderType} 屬於條件單,必須改用 IExchangeClient.PlaceConditionalOrderAsync 送出。{orderType} is a conditional order and must be submitted through IExchangeClient.PlaceConditionalOrderAsync.");
+
+    /// <summary>
     /// 建立「找不到持倉」的錯誤。
     /// Creates a position-not-found failure.
     /// </summary>

@@ -67,12 +67,22 @@ public interface IExchangeClient : IExchangeInfoProvider
     /// The order as the exchange accepted it, or the reason it failed.
     /// </returns>
     /// <remarks>
+    /// <para>
     /// <see cref="OrderRequest.ClientOrderId"/> 是冪等識別碼。送單逾時之後不可以直接重送:先用同一個
     /// <see cref="OrderRequest.ClientOrderId"/> 呼叫 <see cref="GetOrderAsync"/> 確認那張單到底進去了沒有,
     /// 否則會開出兩倍的部位。
     /// <see cref="OrderRequest.ClientOrderId"/> is the idempotency key. Never blindly resend after a timeout: look
     /// the order up with <see cref="GetOrderAsync"/> using the same id first, or the position ends up twice the
     /// intended size.
+    /// </para>
+    /// <para>
+    /// <b>這個方法只收非條件單。</b>停損、停利與移動停損請走 <see cref="PlaceConditionalOrderAsync"/>
+    /// —— 那幾個類型送到這裡會被交易所拒絕,實作也會以代碼
+    /// <see cref="TradeErrorCodes.ConditionalOrderPathRequired"/> 先擋下來。
+    /// <b>This method takes non-conditional orders only.</b> Stops, take-profits, and trailing stops go through
+    /// <see cref="PlaceConditionalOrderAsync"/>: the exchange rejects those types here, and implementations
+    /// short-circuit them with <see cref="TradeErrorCodes.ConditionalOrderPathRequired"/>.
+    /// </para>
     /// </remarks>
     Task<Result<Order>> PlaceOrderAsync(OrderRequest request, CancellationToken cancellationToken = default);
 
@@ -136,6 +146,142 @@ public interface IExchangeClient : IExchangeInfoProvider
     Task<Result<IReadOnlyList<Order>>> GetOpenOrdersAsync(
         string? symbol = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 送出一張條件單(停損、停利或移動停損)。
+    /// Places one conditional order: a stop, a take-profit, or a trailing stop.
+    /// </summary>
+    /// <param name="request">
+    /// 條件單請求。呼叫端應先以 <see cref="ConditionalOrderRequest.NormalizeFor"/> 校正價量。
+    /// The conditional order request. Callers should normalise it with
+    /// <see cref="ConditionalOrderRequest.NormalizeFor"/> first.
+    /// </param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>
+    /// 交易所接受後的條件單狀態,或失敗原因。
+    /// The conditional order as the exchange accepted it, or the reason it failed.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// 條件單與一般委託分成兩個方法,是因為交易所把它們放在兩條獨立的路徑上:編號自成一套、
+    /// 撤單端點不同、狀態機也不一樣。<see cref="PlaceOrderAsync"/> 收到條件單類型會被拒絕。
+    /// Conditional orders get their own method because exchanges keep them on a separate path: their own
+    /// numbering, a different cancellation endpoint, and a different state machine.
+    /// <see cref="PlaceOrderAsync"/> rejects conditional types.
+    /// </para>
+    /// <para>
+    /// <see cref="ConditionalOrderRequest.ClientConditionalOrderId"/> 是冪等識別碼,規矩與一般委託相同:
+    /// 送單逾時之後先用 <see cref="GetConditionalOrderAsync"/> 查,不可以直接重送。停損重複掛尤其危險 ——
+    /// 部位被其中一張平掉之後,另一張會反手開出一個沒人要的反向部位。
+    /// <see cref="ConditionalOrderRequest.ClientConditionalOrderId"/> is the idempotency key and the rule is the
+    /// same as for ordinary orders: after a timeout, look it up with <see cref="GetConditionalOrderAsync"/>
+    /// rather than resending. A duplicated stop is the worst case — once one of them closes the position, the
+    /// other opens an unwanted one in the opposite direction.
+    /// </para>
+    /// <para>
+    /// <b>回測撮合器的語意</b>:條件單在 <see cref="ConditionalOrderStatus.New"/> 期間不佔簿上的位置、
+    /// 不吃保證金,撮合器每根 K 線只需判斷觸發價有沒有被穿越。用哪個價格判斷由
+    /// <see cref="ConditionalOrderRequest.TriggerPriceType"/> 決定:
+    /// <see cref="TriggerPriceType.MarkPrice"/> 看標記價,<see cref="TriggerPriceType.LastPrice"/> 看成交價;
+    /// 回測資料若只有成交價,<b>必須</b>把這件事講明,不可以拿成交價冒充標記價 ——
+    /// 那會讓實盤看標記價的停損在回測裡被 K 線影線掃出場,回測結果比實盤悲觀,而且悲觀得看不出來。
+    /// 觸發之後才生出一張 <see cref="Order"/>(市價類型立即撮合,限價類型掛進簿子),
+    /// 其編號填回 <see cref="ConditionalOrder.TriggeredOrderId"/>。
+    /// <b>Semantics in a backtest matcher</b>: while a conditional order is
+    /// <see cref="ConditionalOrderStatus.New"/> it occupies no place on the book and consumes no margin, and the
+    /// matcher need only check each candle for a crossing of the trigger price. Which price to compare is decided
+    /// by <see cref="ConditionalOrderRequest.TriggerPriceType"/>:
+    /// <see cref="TriggerPriceType.MarkPrice"/> watches the mark price and
+    /// <see cref="TriggerPriceType.LastPrice"/> the traded price. A backtest whose data holds only traded prices
+    /// <b>must</b> say so rather than passing them off as mark prices: a stop that watches the mark price live
+    /// then gets taken out by candle wicks in the backtest, making the results pessimistic in a way nothing in
+    /// them reveals. Only after the trigger does an <see cref="Order"/> come into existence — matched immediately
+    /// for the market types, rested on the book for the limit ones — and its id goes into
+    /// <see cref="ConditionalOrder.TriggeredOrderId"/>.
+    /// </para>
+    /// </remarks>
+    Task<Result<ConditionalOrder>> PlaceConditionalOrderAsync(
+        ConditionalOrderRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 撤銷一張條件單。
+    /// Cancels one conditional order.
+    /// </summary>
+    /// <param name="symbol">交易對代碼。The symbol.</param>
+    /// <param name="identifier">條件單識別碼。The conditional order identifier.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>
+    /// 撤銷後的條件單狀態;找不到時為代碼 <see cref="TradeErrorCodes.ConditionalOrderNotFound"/> 的失敗。
+    /// The conditional order after cancellation, or a failure carrying
+    /// <see cref="TradeErrorCodes.ConditionalOrderNotFound"/>.
+    /// </returns>
+    Task<Result<ConditionalOrder>> CancelConditionalOrderAsync(
+        string symbol,
+        ConditionalOrderIdentifier identifier,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 查詢單一條件單。
+    /// Looks up one conditional order.
+    /// </summary>
+    /// <param name="symbol">交易對代碼。The symbol.</param>
+    /// <param name="identifier">條件單識別碼。The conditional order identifier.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>
+    /// 條件單狀態;找不到時為代碼 <see cref="TradeErrorCodes.ConditionalOrderNotFound"/> 的失敗。
+    /// The conditional order, or a failure carrying <see cref="TradeErrorCodes.ConditionalOrderNotFound"/>.
+    /// </returns>
+    /// <remarks>
+    /// 交易所通常只保留有限期間內的條件單紀錄,太舊的會查不到 —— 這時回的是「找不到」,
+    /// 而不是「已撤銷」。要判斷停損現在還在不在,用 <see cref="GetOpenConditionalOrdersAsync"/>。
+    /// Exchanges typically keep conditional order history for a limited window, and anything older comes back as
+    /// not found rather than as cancelled. To find out whether a stop is still in place, use
+    /// <see cref="GetOpenConditionalOrdersAsync"/>.
+    /// </remarks>
+    Task<Result<ConditionalOrder>> GetConditionalOrderAsync(
+        string symbol,
+        ConditionalOrderIdentifier identifier,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 查詢尚未結束的條件單。
+    /// Lists the conditional orders that are still live.
+    /// </summary>
+    /// <param name="symbol">
+    /// 要查詢的交易對;<see langword="null"/> 代表全部商品。
+    /// The symbol to query, or <see langword="null"/> for every symbol.
+    /// </param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>條件單清單,或失敗原因。The open conditional orders, or the reason it failed.</returns>
+    /// <remarks>
+    /// 這是對帳時確認「每個部位都還有停損保護著」的來源。<see cref="GetOpenOrdersAsync"/> 查不到條件單,
+    /// 只看那一個會得到「沒有任何掛單」的結論,而停損其實好端端地掛在另一條路徑上 —— 或者根本不在。
+    /// This is where reconciliation confirms that every position still has a stop behind it.
+    /// <see cref="GetOpenOrdersAsync"/> does not see conditional orders, so relying on it alone concludes "no
+    /// resting orders" while the stops sit safely on the other path — or are genuinely missing.
+    /// </remarks>
+    Task<Result<IReadOnlyList<ConditionalOrder>>> GetOpenConditionalOrdersAsync(
+        string? symbol = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 撤銷某商品的全部條件單。
+    /// Cancels every open conditional order on one symbol.
+    /// </summary>
+    /// <param name="symbol">交易對代碼。The symbol.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>全部撤銷成功時為成功,否則為失敗原因。Success when all were cancelled; otherwise the failure.</returns>
+    /// <remarks>
+    /// 與 <see cref="CancelAllOrdersAsync"/> 一樣,沒有條件單可撤時視為成功。
+    /// 也與它一樣<b>不是</b>彼此的替代品:緊急出場要兩個都呼叫,只撤一般委託會留下停損單,
+    /// 平倉之後那張停損就成了反向開倉的引信。
+    /// As with <see cref="CancelAllOrdersAsync"/>, having nothing to cancel counts as success. Also as with it,
+    /// the two are <b>not</b> substitutes: an emergency exit calls both, because cancelling only the ordinary
+    /// orders leaves the stops behind, and after the position closes such a stop becomes the fuse for an
+    /// inverted one.
+    /// </remarks>
+    Task<Result> CancelAllConditionalOrdersAsync(string symbol, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 設定某商品的槓桿倍數。
