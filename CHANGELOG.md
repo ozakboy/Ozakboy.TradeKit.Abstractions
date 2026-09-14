@@ -42,11 +42,25 @@ silently failed to be placed is the one failure this abstraction layer must not 
   `RejectReason`: a stop rejected by the exchange is the dangerous case — protection believed to be in place that
   is not — and the reason appears exactly once, in the event.
 - **`ConditionalOrderType`** 與 **`ConditionalOrderStatus`**(含 `IsOpen()` / `IsFinal()` 擴充方法):
-  `Triggered` 算「仍然有效」,因為那張觸發出來的委託還沒成交完,把它當成已結束會讓緊急出場漏撤一張。
-  兩者的零值都是 `Unspecified`。
-  With `IsOpen()` / `IsFinal()` helpers. `Triggered` counts as live, because the order it produced has not
-  finished filling and treating it as done leaves that order uncancelled on an emergency exit. Both enums have
-  `Unspecified` as their zero value.
+  `Triggering` 與 `Triggered` 都算「仍然有效」,因為那張觸發出來的委託還沒成交完,把它當成已結束
+  會讓緊急出場漏撤一張。兩者的零值都是 `Unspecified`。
+  With `IsOpen()` / `IsFinal()` helpers. `Triggering` and `Triggered` both count as live, because the order they
+  produced has not finished filling and treating them as done leaves that order uncancelled on an emergency
+  exit. Both enums have `Unspecified` as their zero value.
+
+  狀態列舉裡有兩個值容易被當成多餘,它們各自擋住一種誤讀:
+  Two of the states look redundant and each stops a specific misreading:
+
+  - **`Triggering`**(已送往撮合引擎、尚未被接受)與 `Triggered` 分開,是因為這一段仍可能以
+    `Rejected` 收場 —— 條件單在觸發**之前**通常不做保證金檢查,檢查就發生在這一刻。
+    Kept apart from `Triggered` because this stage can still end in `Rejected`: a conditional order is
+    typically not margin-checked **before** it triggers, and the check happens here.
+  - **`Finished`**(觸發後的委託結束了,但交易所沒說是成交還是被撤)不是 `Filled` 的同義詞。
+    交易所若只講到這裡,要知道究竟成交多少必須拿 `TriggeredOrderId` 去查那張委託;
+    把它讀成成交,會讓一張觸發後被撤掉的停損在帳上變成一次不存在的平倉。
+    Not a synonym for `Filled`. When the exchange reports only this much, finding out how much actually filled
+    means looking the resulting order up by `TriggeredOrderId`; reading it as a fill turns a stop that was
+    cancelled after triggering into a close that never happened.
 - **`ConditionalOrderIdentifier`**:條件單專屬的識別碼(交易所編號或用戶端編號擇一)。
   與 `OrderIdentifier` 分成兩個型別,因為條件單編號與委託編號是交易所兩套獨立的號碼 ——
   拿停損的編號去查一般委託只會得到「找不到」,而型別分開之後那個錯誤在編譯期就過不了。

@@ -25,24 +25,41 @@ public sealed class ConditionalOrderModelTests
     };
 
     [TestMethod]
-    public void 等待觸發與已觸發都算仍然有效()
+    public void 等待觸發與觸發中與已觸發都算仍然有效()
     {
         Assert.IsTrue(ConditionalOrderStatus.New.IsOpen());
+        Assert.IsTrue(ConditionalOrderStatus.Triggering.IsOpen(), "送往撮合引擎的路上,還可能被打回來");
         Assert.IsTrue(ConditionalOrderStatus.Triggered.IsOpen(), "觸發後的委託還沒成交完,緊急出場仍需撤掉它");
         Assert.IsFalse(ConditionalOrderStatus.Filled.IsOpen());
+        Assert.IsFalse(ConditionalOrderStatus.Finished.IsOpen());
         Assert.IsFalse(ConditionalOrderStatus.Canceled.IsOpen());
         Assert.IsFalse(ConditionalOrderStatus.Unspecified.IsOpen());
     }
 
     [TestMethod]
-    public void 終態判定涵蓋成交撤銷失效與拒絕()
+    public void 終態判定涵蓋成交結束撤銷失效與拒絕()
     {
         Assert.IsTrue(ConditionalOrderStatus.Filled.IsFinal());
+        Assert.IsTrue(ConditionalOrderStatus.Finished.IsFinal());
         Assert.IsTrue(ConditionalOrderStatus.Canceled.IsFinal());
         Assert.IsTrue(ConditionalOrderStatus.Expired.IsFinal());
         Assert.IsTrue(ConditionalOrderStatus.Rejected.IsFinal());
         Assert.IsFalse(ConditionalOrderStatus.New.IsFinal());
+        Assert.IsFalse(ConditionalOrderStatus.Triggering.IsFinal());
         Assert.IsFalse(ConditionalOrderStatus.Triggered.IsFinal());
+    }
+
+    [TestMethod]
+    public void 結束與成交是兩個不同的終態()
+    {
+        // Finished 是誠實的「不知道成交還是被撤」。把它當成 Filled 的同義詞,
+        // 會讓一張觸發後被撤掉的停損在帳上變成一次不存在的平倉。
+        var terminal = Enum.GetValues<ConditionalOrderStatus>().Where(status => status.IsFinal()).ToList();
+
+        Assert.Contains(ConditionalOrderStatus.Filled, terminal);
+        Assert.Contains(ConditionalOrderStatus.Finished, terminal);
+        Assert.IsTrue(ConditionalOrderStatus.Finished.IsFinal());
+        Assert.IsFalse(ConditionalOrderStatus.Finished.IsOpen());
     }
 
     [TestMethod]
