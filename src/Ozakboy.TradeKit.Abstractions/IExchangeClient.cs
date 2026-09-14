@@ -235,11 +235,24 @@ public interface IExchangeClient : IExchangeInfoProvider
     /// The conditional order, or a failure carrying <see cref="TradeErrorCodes.ConditionalOrderNotFound"/>.
     /// </returns>
     /// <remarks>
+    /// <para>
     /// 交易所通常只保留有限期間內的條件單紀錄,太舊的會查不到 —— 這時回的是「找不到」,
     /// 而不是「已撤銷」。要判斷停損現在還在不在,用 <see cref="GetOpenConditionalOrdersAsync"/>。
     /// Exchanges typically keep conditional order history for a limited window, and anything older comes back as
     /// not found rather than as cancelled. To find out whether a stop is still in place, use
     /// <see cref="GetOpenConditionalOrdersAsync"/>.
+    /// </para>
+    /// <para>
+    /// <b>剛下單或剛撤單時,這裡的結果可能落後。</b>交易所的條件單查詢不保證與下單回應同步:
+    /// 剛成功掛上的單可能短暫查不到,剛撤掉的單可能短暫仍顯示為生效中。因此<b>「找不到」不能拿來證明
+    /// 單子沒掛上</b> —— 據此重送,結果就是兩張停損。需要結論時,等待一段時間後再查,或以
+    /// <see cref="GetOpenConditionalOrdersAsync"/> 與使用者資料串流的更新交叉確認。
+    /// <b>Right after placing or cancelling, this may lag.</b> Conditional order lookups are not guaranteed to be
+    /// consistent with the placement response: a freshly placed order can briefly be not found, and a freshly
+    /// cancelled one can briefly still read as live. <b>Not found is therefore no proof that the order did not
+    /// land</b> — resending on that basis leaves two stops. When a conclusion is needed, query again after a delay, or
+    /// cross-check with <see cref="GetOpenConditionalOrdersAsync"/> and the user data stream updates.
+    /// </para>
     /// </remarks>
     Task<Result<ConditionalOrder>> GetConditionalOrderAsync(
         string symbol,
