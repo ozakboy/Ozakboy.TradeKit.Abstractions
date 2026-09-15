@@ -86,7 +86,7 @@ else
 `MarginMode`、`TriggerPriceType`、`PriceRounding`、`ConditionalOrderType`、`ConditionalOrderStatus`。
 
 **模型** — `SymbolInfo`(識別資料、交易規則與校正方法)、`OrderRequest`、`Order`、`OrderIdentifier`、
-`Position`、`Balance`、`AccountSnapshot`、`Kline`、`KlineQuery`、`Trade`、`MarkPriceUpdate`、
+`Position`、`Balance`、`AccountSnapshot`(兩者都帶維持保證金與起始保證金,交易所未提供時為 `null`)、`Kline`、`KlineQuery`、`Trade`、`MarkPriceUpdate`、
 `NormalizedOrderSize`、`AccountUpdate`(**增量**,不是快照;由只含事件實際欄位的 `PositionChange` 與
 `BalanceChange` 組成)、`MarginCall`(內含 `MarginCallPosition`)、`ResyncRequired`,以及條件單這一組:
 `ConditionalOrderRequest`、`ConditionalOrder`、`ConditionalOrderUpdate`、`ConditionalOrderIdentifier`。

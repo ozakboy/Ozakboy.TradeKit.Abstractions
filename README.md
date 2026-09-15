@@ -89,7 +89,8 @@ opaque "invalid parameter".
 `TriggerPriceType`, `PriceRounding`, `ConditionalOrderType`, `ConditionalOrderStatus`.
 
 **Models** — `SymbolInfo` (identity plus trading rules and the normalisation methods), `OrderRequest`, `Order`,
-`OrderIdentifier`, `Position`, `Balance`, `AccountSnapshot`, `Kline`, `KlineQuery`, `Trade`, `MarkPriceUpdate`,
+`OrderIdentifier`, `Position`, `Balance`, `AccountSnapshot` (both with maintenance and initial margin, `null` when the
+exchange does not provide them), `Kline`, `KlineQuery`, `Trade`, `MarkPriceUpdate`,
 `NormalizedOrderSize`, `AccountUpdate` (a **delta**, not a snapshot, built from `PositionChange` and
 `BalanceChange`, which carry only what the event delivers), `MarginCall` (with `MarginCallPosition`),
 `ResyncRequired`, and the conditional order set: `ConditionalOrderRequest`, `ConditionalOrder`,

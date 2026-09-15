@@ -8,6 +8,47 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-09-15
+
+帳戶模型補上**維持保證金**。保證金率(保證金餘額 ÷ 維持保證金)是判斷離強平還有多遠的標準算法,
+但先前的 `Balance` 與 `AccountSnapshot` 都沒有這個數字,消費端只能拿起始保證金代替 —— 起始保證金遠大於
+維持保證金,算出來的保證金率偏低,風控會比實際需要更早擋單。
+The account model gains the **maintenance margin**. A margin ratio — margin balance divided by maintenance
+margin — is the standard measure of distance from liquidation, yet neither `Balance` nor `AccountSnapshot` carried
+that figure, leaving consumers to substitute the initial margin. The initial margin is far larger, so the ratio
+came out low and risk control blocked orders earlier than it had to.
+
+### 新增功能 / Added
+
+- **`Balance.MaintenanceMargin`、`Balance.InitialMargin`**(`decimal?`):單一資產的維持保證金與起始保證金
+  (持倉與掛單合計)。
+  The maintenance margin and the initial margin (positions and open orders together) of one asset.
+- **`AccountSnapshot.TotalMaintenanceMargin`、`AccountSnapshot.TotalInitialMargin`**(`decimal?`):整個帳戶的總額,
+  以交易所彙總帳戶時的計價單位表示。多資產保證金模式下交易所會先換算再加總,所以它不一定等於任何單一資產的值;
+  只看單一保證金資產時請用該資產的 `Balance.MaintenanceMargin`。
+  Account-wide totals in whatever unit the exchange aggregates the account in. In a multi-asset margin mode the
+  exchange converts before summing, so a total need not equal any single asset's figure; for one margin asset, use
+  that asset's `Balance.MaintenanceMargin`.
+
+四個欄位都是 **`null` 表示交易所未提供,`0` 表示交易所明確回報為零**(例如空手時)。刻意不用 `decimal`
+預設 0:缺值填 0 會讓風控讀成「沒有維持保證金需求」,也就是這個帳戶沒有強平風險。
+For all four, **`null` means the exchange did not provide it and `0` means the exchange reported zero** — when
+flat, say. A plain `decimal` defaulting to zero was ruled out on purpose: a missing value filled with zero reads as
+"no maintenance margin required", which is to say no liquidation risk.
+
+### 對實作者的影響 / For implementers
+
+**不是破壞性變更。**新增的都是預設 `null` 的 `init` 屬性,既有的物件初始設定式照樣編得過,沒有設定的實作
+得到的是 `null`(未知),不是一個看起來像真的 0。能取得這些數字的實作應該填上;取不到的就留 `null`,
+不要為了「欄位有值」而填 0。回測撮合器若自己計算保證金,可以填入計算值。
+兩個型別都是 record,新屬性會納入值相等比較與 `ToString()` 的輸出。
+**Not a breaking change.** The additions are `init` properties defaulting to `null`, so existing object
+initialisers still compile, and an implementation that sets nothing yields `null` — unknown — rather than a
+plausible-looking zero. Implementations that can obtain the figures should fill them in; those that cannot should
+leave them `null` rather than writing zero just to have a value. A backtest matcher that computes margin itself may
+supply its computed figures. Both types are records, so the new properties take part in value equality and in
+`ToString()` output.
+
 ## [0.4.0] - 2026-09-14
 
 條件單(停損、停利、移動停損)先前只是 `OrderType` 上的幾個列舉值,與一般委託共用 `PlaceOrderAsync`。

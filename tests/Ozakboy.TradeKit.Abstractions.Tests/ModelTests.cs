@@ -158,6 +158,49 @@ public sealed class ModelTests
     }
 
     [TestMethod]
+    public void 未提供的保證金需求是未知而不是零()
+    {
+        // 缺值若預設成 0,風控會讀成「沒有維持保證金需求」,也就是沒有強平風險。
+        // A missing value defaulting to zero would read as "no maintenance margin required" — no liquidation risk.
+        var balance = new Balance { Asset = "USDT", WalletBalance = 1_000m };
+        var snapshot = new AccountSnapshot { Balances = [balance], TakenAt = Now };
+
+        Assert.IsNull(balance.MaintenanceMargin);
+        Assert.IsNull(balance.InitialMargin);
+        Assert.IsNull(snapshot.TotalMaintenanceMargin);
+        Assert.IsNull(snapshot.TotalInitialMargin);
+    }
+
+    [TestMethod]
+    public void 交易所明確給的零保證金需求保留為零()
+    {
+        var balance = new Balance { Asset = "USDT", MaintenanceMargin = 0m, InitialMargin = 0m };
+        var snapshot = new AccountSnapshot { TotalMaintenanceMargin = 0m, TotalInitialMargin = 0m, TakenAt = Now };
+
+        Assert.AreEqual(0m, balance.MaintenanceMargin);
+        Assert.AreEqual(0m, balance.InitialMargin);
+        Assert.AreEqual(0m, snapshot.TotalMaintenanceMargin);
+        Assert.AreEqual(0m, snapshot.TotalInitialMargin);
+    }
+
+    [TestMethod]
+    public void 維持保證金可以算出保證金率()
+    {
+        var balance = new Balance
+        {
+            Asset = "USDT",
+            WalletBalance = 1_000m,
+            UnrealizedPnl = -100m,
+            MaintenanceMargin = 450m,
+            InitialMargin = 900m,
+        };
+
+        Assert.AreEqual(450m, balance.MaintenanceMargin);
+        Assert.AreEqual(900m, balance.InitialMargin);
+        Assert.AreEqual(200m, balance.MarginBalance / balance.MaintenanceMargin!.Value * 100m);
+    }
+
+    [TestMethod]
     public void 帳戶快照可以查餘額與持倉()
     {
         var snapshot = new AccountSnapshot

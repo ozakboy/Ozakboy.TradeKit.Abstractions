@@ -40,6 +40,41 @@ public sealed record AccountSnapshot
     public bool CanTrade { get; init; } = true;
 
     /// <summary>
+    /// 整個帳戶的維持保證金總額。交易所未提供時為 <see langword="null"/>。
+    /// The maintenance margin required across the whole account; <see langword="null"/> when the exchange does not
+    /// provide it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 以交易所彙總帳戶時使用的計價單位表示,不一定等於任何單一資產的 <see cref="Balance.MaintenanceMargin"/>
+    /// —— 多資產保證金模式下,交易所會把各資產換算成同一個單位再加總。只看單一保證金資產時,
+    /// 請改用那個資產的 <see cref="Balance.MaintenanceMargin"/>。
+    /// Expressed in whatever unit the exchange aggregates the account in, which need not match any single asset's
+    /// <see cref="Balance.MaintenanceMargin"/>: in a multi-asset margin mode the exchange converts every asset into
+    /// one unit before summing. For a single margin asset, use that asset's <see cref="Balance.MaintenanceMargin"/>.
+    /// </para>
+    /// <para>
+    /// <b><see langword="null"/> 與 0 意思不同。</b>0 是交易所明確回報「沒有維持保證金需求」;
+    /// <see langword="null"/> 是「不知道」,風控不可把它當成沒有強平風險。
+    /// <b><see langword="null"/> and zero mean different things.</b> Zero is the exchange stating that no
+    /// maintenance margin is required; <see langword="null"/> means unknown, and risk control must not read it as
+    /// the absence of liquidation risk.
+    /// </para>
+    /// </remarks>
+    public decimal? TotalMaintenanceMargin { get; init; }
+
+    /// <summary>
+    /// 整個帳戶佔用的起始保證金總額(持倉與掛單合計)。交易所未提供時為 <see langword="null"/>。
+    /// The initial margin committed across the whole account, positions and open orders together;
+    /// <see langword="null"/> when the exchange does not provide it.
+    /// </summary>
+    /// <remarks>
+    /// 計價單位與 <see langword="null"/> 的語意同 <see cref="TotalMaintenanceMargin"/>。
+    /// The unit and the meaning of <see langword="null"/> are as for <see cref="TotalMaintenanceMargin"/>.
+    /// </remarks>
+    public decimal? TotalInitialMargin { get; init; }
+
+    /// <summary>
     /// 快照時間(UTC 語意)。
     /// The time of the snapshot, in UTC semantics.
     /// </summary>
