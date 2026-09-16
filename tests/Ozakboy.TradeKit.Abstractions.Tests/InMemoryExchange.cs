@@ -374,6 +374,30 @@ internal sealed class InMemoryExchange : IExchangeClient, IMarketDataFeed, IUser
         }
     }
 
+    public Task<Result<BookTicker>> GetBookTickerAsync(
+        string symbol,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(_symbols.TryGetValue(symbol, out var info)
+            ? Result.Success(BuildBookTicker(info))
+            : Result.Failure<BookTicker>(TradeErrors.SymbolNotFound(symbol)));
+
+    public async IAsyncEnumerable<Result<BookTicker>> SubscribeBookTickersAsync(
+        IReadOnlyCollection<string> symbols,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(symbols);
+
+        foreach (var symbol in symbols)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.CompletedTask.ConfigureAwait(false);
+
+            yield return _symbols.TryGetValue(symbol, out var info)
+                ? Result.Success(BuildBookTicker(info))
+                : Result.Failure<BookTicker>(TradeErrors.SymbolNotFound(symbol));
+        }
+    }
+
     public async IAsyncEnumerable<Result<Order>> SubscribeOrderUpdatesAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
@@ -446,6 +470,31 @@ internal sealed class InMemoryExchange : IExchangeClient, IMarketDataFeed, IUser
     public IAsyncEnumerable<Result<ResyncRequired>> SubscribeResyncSignalsAsync(
         CancellationToken cancellationToken = default) =>
         AsyncEnumerable.Empty<Result<ResyncRequired>>();
+
+    /// <summary>
+    /// 以最後一根 K 線的收盤價為中心,往兩側各讓一個跳動點,合成一組盤口。
+    /// Synthesises a book one tick either side of the last candle's close.
+    /// </summary>
+    /// <param name="symbol">交易規則,跳動點取自這裡。The symbol rules, which supply the tick size.</param>
+    /// <returns>盤口。The book.</returns>
+    /// <remarks>
+    /// 價差刻意不是零:買一等於賣一的盤口在真實市場不存在,拿它當測試資料,
+    /// 「掛在買一減 n 個跳動點會不會穿到對手方」這類判斷就永遠測不出問題。
+    /// 兩側的掛單量也刻意不同,免得把買賣兩邊寫反的錯誤在測試裡長得一模一樣。
+    /// The spread is deliberately non-zero: a book whose bid equals its ask does not occur in a real market, and
+    /// using one as test data means a check such as "does the bid minus n ticks cross the spread" can never
+    /// fail. The two sizes differ for the same reason — so that swapping the two sides is not invisible.
+    /// </remarks>
+    private BookTicker BuildBookTicker(SymbolInfo symbol) => new()
+    {
+        Symbol = symbol.Name,
+        BidPrice = _klines[^1].Close - symbol.TickSize,
+        BidQuantity = 1.5m,
+        AskPrice = _klines[^1].Close + symbol.TickSize,
+        AskQuantity = 2.5m,
+        ExchangeTime = _now,
+        ReceivedAt = _now,
+    };
 
     private bool TryFindConditionalOrder(ConditionalOrderIdentifier identifier, out ConditionalOrder found)
     {

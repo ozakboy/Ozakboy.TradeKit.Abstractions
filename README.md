@@ -4,8 +4,8 @@ Exchange-neutral abstractions for derivatives trading on .NET.
 
 [繁體中文說明](README_zh-TW.md)
 
-This package defines what a futures exchange looks like — orders, positions, accounts, candles, fills, and the
-trading rules that govern them — so that strategy and backtest code depends on the shape of an exchange rather
+This package defines what a futures exchange looks like — orders, positions, accounts, candles, the book, fills,
+and the trading rules that govern them — so that strategy and backtest code depends on the shape of an exchange rather
 than on one particular exchange's client library.
 
 It contains type definitions and pure functions only. There is no HTTP, no WebSocket, no signing, and no
@@ -90,20 +90,52 @@ opaque "invalid parameter".
 
 **Models** — `SymbolInfo` (identity plus trading rules and the normalisation methods), `OrderRequest`, `Order`,
 `OrderIdentifier`, `Position`, `Balance`, `AccountSnapshot` (both with maintenance and initial margin, `null` when the
-exchange does not provide them), `Kline`, `KlineQuery`, `Trade`, `MarkPriceUpdate`,
-`NormalizedOrderSize`, `AccountUpdate` (a **delta**, not a snapshot, built from `PositionChange` and
+exchange does not provide them), `Kline`, `KlineQuery`, `Trade`, `MarkPriceUpdate`, `BookTicker` (the best bid
+and ask with their sizes), `NormalizedOrderSize`, `AccountUpdate` (a **delta**, not a snapshot, built from `PositionChange` and
 `BalanceChange`, which carry only what the event delivers), `MarginCall` (with `MarginCallPosition`),
 `ResyncRequired`, and the conditional order set: `ConditionalOrderRequest`, `ConditionalOrder`,
 `ConditionalOrderUpdate`, `ConditionalOrderIdentifier`.
 
 **Interfaces** — `IExchangeInfoProvider` (symbols, server time), `IExchangeClient` (account, positions, orders,
-conditional orders), `IMarketDataFeed` (historical klines, live klines and mark prices), `IUserDataFeed` (orders,
+conditional orders), `IMarketDataFeed` (historical klines, live klines, mark prices, and the book), `IUserDataFeed` (orders,
 conditional orders, fills, account changes, margin calls, and the signal that local state must be reconciled in
 full).
 
 **Error codes** — `TradeErrorCodes` holds the neutral codes (`trade.order_not_found`, `trade.notional_below_min`,
 `trade.rate_limited`, …) and `TradeErrors` builds the corresponding `Error` values. Mapping an exchange's own codes
 onto this set is the implementation package's job, so that no strategy ever contains `if (code == -2011)`.
+
+### A maker order is priced from the book, not from the last price
+
+`BookTicker` carries the best bid and ask with the size resting at each, and `IMarketDataFeed` exposes it twice:
+`GetBookTickerAsync(symbol)` for one snapshot and `SubscribeBookTickersAsync(symbols)` for the live stream.
+
+```csharp
+var book = await feed.GetBookTickerAsync("BTCUSDT");
+
+if (book.TryGetValue(out var top))
+{
+    // Post-Only buy: at the bid or below, never across the spread.
+    var entryPrice = top.BidPrice - (2 * symbol.TickSize);
+}
+```
+
+A strategy that must not take liquidity — Post-Only, or Binance's GTX — has to quote from the bid and the ask.
+Pricing from the last traded price or from `MarkPriceUpdate.MarkPrice` produces an order that would match on
+arrival, and the exchange rejects it outright. Nothing looks broken: the strategy runs, signals fire, and no
+position is ever opened.
+
+Two things the type insists on:
+
+* `ReceivedAt` is **required**. A book starts going stale the moment it leaves the exchange, and a stale one is
+  indistinguishable from a fresh one without a timestamp. Defaulting it would put every book in the year 1, so a
+  freshness check would silently reject all of them.
+* `ExchangeTime` is `null` when the exchange sends none, never a copy of `ReceivedAt`. The gap between the two is
+  the transit latency, and filling one from the other makes that measurement permanently zero.
+
+`MidPrice` is for valuation, not for quoting: a buy at the midpoint sits above the best bid, which for a maker
+order is a rejection waiting to happen. A negative `Spread` means a crossed book — bad data rather than a
+tradable market — and such a book should be discarded rather than priced from.
 
 ### Conditional orders travel their own path
 

@@ -8,6 +8,70 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-09-16
+
+補上**盤口**(買一與賣一)。先前這層抽象只有 K 線與標記價,兩者都不是可以掛單的價格:純 maker
+(Post-Only / GTX)的策略必須把買單掛在買一、賣單掛在賣一,拿最新成交價或標記價代替就會定出一個
+「會立即成交」的價格,交易所直接拒單 —— 策略看起來一切正常,實際上一筆都進不了場。
+The **top of the book** — the best bid and ask — arrives. Until now this abstraction carried klines and mark
+prices, neither of which is a price an order can rest at: a pure-maker strategy (Post-Only, GTX) must quote from
+the bid and the ask, and substituting the last traded price or the mark price produces a price that would match
+immediately, which the exchange rejects outright. Everything looks healthy while the strategy never enters a
+single position.
+
+### 新增功能 / Added
+
+- **`BookTicker`**:盤口快照。`Symbol`、`BidPrice`、`BidQuantity`、`AskPrice`、`AskQuantity` 五個欄位都是
+  必填,價量一律 `decimal`;另有衍生的 `Spread`(賣一減買一)與 `MidPrice`(中點)。
+  A book snapshot whose five identity, price, and size members are all required and all `decimal`, plus the
+  derived `Spread` and `MidPrice`.
+- **`IMarketDataFeed.GetBookTickerAsync(symbol, cancellationToken)`**:查詢單一商品目前的盤口。
+  Queries the current book for one symbol.
+- **`IMarketDataFeed.SubscribeBookTickersAsync(symbols, cancellationToken)`**:訂閱盤口,形狀與
+  `SubscribeMarkPricesAsync` 相同 —— 多個商品共用一條 `IAsyncEnumerable<Result<BookTicker>>`,以
+  `BookTicker.Symbol` 區分。
+  Subscribes to the book with the same shape as `SubscribeMarkPricesAsync`: one
+  `IAsyncEnumerable<Result<BookTicker>>` shared by every symbol and told apart by `BookTicker.Symbol`.
+
+### 缺值語意 / Missing values
+
+- **`ExchangeTime`(`DateTimeOffset?`)**:交易所自己標記的時間,未提供時為 `null`。**不可以拿
+  `ReceivedAt` 填** —— 兩者相減就是這筆盤口在路上花的時間,填了之後那個延遲永遠是零,而量測延遲正是
+  這個欄位存在的理由。
+  The exchange's own timestamp, `null` when it provides none. **It is never filled from `ReceivedAt`**: the
+  difference between the two is how long the book spent in transit, and collapsing them makes that latency
+  permanently zero — which is the one thing the member exists to measure.
+- **`ReceivedAt`(`DateTimeOffset`)**:本地收到的時間,**必填**。不給預設值是因為預設的
+  `DateTimeOffset` 是 0001-01-01,算出來的「盤口年齡」是兩千年,新鮮度檢查會把每一筆盤口都判成過期,
+  策略於是一張單都掛不出去而畫面上沒有任何錯誤。
+  When the book arrived locally; **required**. A default would be 0001-01-01, making every book two thousand
+  years old, so a freshness check would reject all of them and the strategy would quietly stop placing orders
+  with nothing reporting an error.
+- 五個價量欄位沒有「缺值」這回事:盤口缺了任何一邊就不是盤口。實作收到缺欄位的訊息應該讓整筆判讀失敗,
+  **不可以填 0** —— 0 會被讀成「賣一是零元」或「買一無人掛單」,前者算出來的掛單價是零,
+  後者讓策略以為市場沒有深度。
+  The five price and size members have no missing case: a book without one side is not a book. An
+  implementation must fail the whole read rather than substitute zero, which reads as "the ask is zero" or
+  "nobody is bidding".
+
+### 對實作者的影響 / For implementers
+
+**這是破壞性變更。**`IMarketDataFeed` 多了兩個成員,既有的實作(含測試替身、回測的模擬行情)必須補上
+才編得過。本 repo 的 `InMemoryExchange` 已一併補齊:它以最後一根 K 線的收盤價為中心、往兩側各讓一個
+跳動點合成盤口,價差刻意不是零 —— 買一等於賣一的盤口在真實市場不存在,拿它當測試資料,
+「掛在買一減 n 個跳動點會不會穿到對手方」這類判斷就永遠測不出問題。
+**This is a breaking change.** `IMarketDataFeed` gains two members and every existing implementation — test
+doubles and backtest feeds included — must supply them to compile. The `InMemoryExchange` in this repository
+has been extended accordingly: it synthesises a book one tick either side of the last candle's close, with a
+deliberately non-zero spread, because a book whose bid equals its ask does not occur in a real market and using
+one as test data means a check such as "does the bid minus n ticks cross the spread" can never fail.
+
+`BookTicker.MidPrice` 是估值用的參考價,**不是可以成交的價格**:掛在中點的買單高於買一,對純 maker 的
+策略而言就是一張會立即成交的單。要掛單請用 `BidPrice` 與 `AskPrice` 本身。
+`BookTicker.MidPrice` is a reference for valuation and **not a tradable price**: a buy at the midpoint sits
+above the best bid, which for a pure-maker strategy is an order that matches on arrival. Quote from `BidPrice`
+and `AskPrice` themselves.
+
 ## [0.5.0] - 2026-09-15
 
 帳戶模型補上**維持保證金**。保證金率(保證金餘額 ÷ 維持保證金)是判斷離強平還有多遠的標準算法,

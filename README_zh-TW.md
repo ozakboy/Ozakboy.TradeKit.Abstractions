@@ -4,7 +4,7 @@
 
 [English](README.md)
 
-這個套件定義「一個合約交易所應該長什麼樣」:委託、持倉、帳戶、K 線、成交,以及管住這些東西的交易規則。
+這個套件定義「一個合約交易所應該長什麼樣」:委託、持倉、帳戶、K 線、盤口、成交,以及管住這些東西的交易規則。
 策略與回測程式碼因此只依賴交易所的「形狀」,而不是某一家交易所的客戶端函式庫。
 
 裡面只有型別定義與純函式。沒有 HTTP、沒有 WebSocket、沒有簽章,也沒有任何一家交易所的專屬程式碼。
@@ -87,17 +87,46 @@ else
 
 **模型** — `SymbolInfo`(識別資料、交易規則與校正方法)、`OrderRequest`、`Order`、`OrderIdentifier`、
 `Position`、`Balance`、`AccountSnapshot`(兩者都帶維持保證金與起始保證金,交易所未提供時為 `null`)、`Kline`、`KlineQuery`、`Trade`、`MarkPriceUpdate`、
-`NormalizedOrderSize`、`AccountUpdate`(**增量**,不是快照;由只含事件實際欄位的 `PositionChange` 與
+`BookTicker`(買一賣一與兩側掛單量)、`NormalizedOrderSize`、`AccountUpdate`(**增量**,不是快照;由只含事件實際欄位的 `PositionChange` 與
 `BalanceChange` 組成)、`MarginCall`(內含 `MarginCallPosition`)、`ResyncRequired`,以及條件單這一組:
 `ConditionalOrderRequest`、`ConditionalOrder`、`ConditionalOrderUpdate`、`ConditionalOrderIdentifier`。
 
 **介面** — `IExchangeInfoProvider`(商品與伺服器時間)、`IExchangeClient`(帳戶、持倉、委託、條件單)、
-`IMarketDataFeed`(歷史 K 線、即時 K 線與標記價)、`IUserDataFeed`(委託、條件單、成交、帳戶變動、
+`IMarketDataFeed`(歷史 K 線、即時 K 線、標記價與盤口)、`IUserDataFeed`(委託、條件單、成交、帳戶變動、
 保證金追繳,以及「本地狀態不可信,請全量對帳」的訊號)。
 
 **錯誤代碼** — `TradeErrorCodes` 放中立的代碼(`trade.order_not_found`、`trade.notional_below_min`、
 `trade.rate_limited` 等),`TradeErrors` 負責建立對應的 `Error`。把交易所自家的錯誤碼對映到這一組是
 實作套件的責任,如此策略裡才不會出現 `if (code == -2011)`。
+
+### 掛單價來自盤口,不是來自最新成交價
+
+`BookTicker` 帶的是買一、賣一與兩側的掛單量,`IMarketDataFeed` 提供兩種取法:
+`GetBookTickerAsync(symbol)` 取一筆快照,`SubscribeBookTickersAsync(symbols)` 訂即時串流。
+
+```csharp
+var book = await feed.GetBookTickerAsync("BTCUSDT");
+
+if (book.TryGetValue(out var top))
+{
+    // Post-Only 的買單:掛在買一或更低,絕不穿到對手方。
+    var entryPrice = top.BidPrice - (2 * symbol.TickSize);
+}
+```
+
+不想吃單、只想掛單的策略(Post-Only,幣安的 GTX)一定要從買一與賣一算價。拿最新成交價或
+`MarkPriceUpdate.MarkPrice` 代替,算出來的是一個「會立即成交」的價格,交易所直接拒單 ——
+而表面上什麼都沒壞:策略照跑、訊號照出,就是一個部位都沒開。
+
+這個型別堅持的兩件事:
+
+* `ReceivedAt` **必填**。盤口從離開交易所那一刻就開始過期,而少了時間戳,過期的盤口和新鮮的長得一模一樣。
+  給預設值的話每一筆盤口都會落在西元 1 年,新鮮度檢查會把全部判成過期,而且不會有任何錯誤訊息。
+* `ExchangeTime` 在交易所沒給時是 `null`,絕不拿 `ReceivedAt` 填。兩者的差就是這筆盤口在路上花的時間,
+  互相填補會讓這個量測永遠是零。
+
+`MidPrice` 是估值用的,不是掛單用的:掛在中點的買單高於買一,對 maker 單來說就是一張等著被拒的單。
+`Spread` 出現負數代表盤口交叉 —— 那不是可以下單的市場,而是資料有問題,應該丟掉重取,不要拿它定價。
 
 ### 條件單走的是另一條路
 

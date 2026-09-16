@@ -175,6 +175,41 @@ public sealed class InMemoryExchangeTests
     }
 
     [TestMethod]
+    public async Task 盤口查得到也訂得到而且買一低於賣一()
+    {
+        var exchange = CreateExchange();
+
+        var queried = await exchange.GetBookTickerAsync("BTCUSDT", CancellationToken.None);
+
+        Assert.IsTrue(queried.TryGetValue(out var book), queried.Error?.ToString());
+        Assert.AreEqual("BTCUSDT", book.Symbol);
+        Assert.IsTrue(book.BidPrice < book.AskPrice, "買一必須低於賣一。The bid must sit below the ask.");
+        Assert.AreEqual(Start, book.ReceivedAt);
+
+        var streamed = new List<BookTicker>();
+
+        await foreach (var item in exchange.SubscribeBookTickersAsync(["BTCUSDT"], CancellationToken.None))
+        {
+            Assert.IsTrue(item.TryGetValue(out var update), item.Error?.ToString());
+            streamed.Add(update);
+        }
+
+        Assert.HasCount(1, streamed);
+        Assert.AreEqual(book, streamed[0]);
+    }
+
+    [TestMethod]
+    public async Task 查不到的商品回的是交易對專屬的錯誤碼()
+    {
+        var exchange = CreateExchange();
+
+        var queried = await exchange.GetBookTickerAsync("DOGEUSDT", CancellationToken.None);
+
+        Assert.IsTrue(queried.IsFailure);
+        Assert.AreEqual(TradeErrorCodes.SymbolNotFound, queried.Error!.Code);
+    }
+
+    [TestMethod]
     public async Task 成交與委託更新可以由私有串流推出()
     {
         var exchange = CreateExchange();

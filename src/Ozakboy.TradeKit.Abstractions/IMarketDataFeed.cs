@@ -3,8 +3,9 @@ using Ozakboy.Core.Abstractions;
 namespace Ozakboy.TradeKit.Abstractions;
 
 /// <summary>
-/// 行情資料來源:歷史 K 線的查詢,以及 K 線與標記價的即時訂閱。
-/// The market data source: historical kline queries plus live kline and mark price subscriptions.
+/// 行情資料來源:歷史 K 線與盤口的查詢,以及 K 線、標記價與盤口的即時訂閱。
+/// The market data source: historical kline and book ticker queries plus live kline, mark price, and book
+/// ticker subscriptions.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -92,6 +93,62 @@ public interface IMarketDataFeed
     /// The mark price stream, told apart by <see cref="MarkPriceUpdate.Symbol"/>.
     /// </returns>
     IAsyncEnumerable<Result<MarkPriceUpdate>> SubscribeMarkPricesAsync(
+        IReadOnlyCollection<string> symbols,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 查詢單一商品目前的盤口(買一與賣一)。
+    /// Gets the current top of the book — the best bid and ask — for one symbol.
+    /// </summary>
+    /// <param name="symbol">交易對代碼。The symbol.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>盤口快照,或失敗原因。The book snapshot, or the reason it failed.</returns>
+    /// <remarks>
+    /// <para>
+    /// 純 maker(Post-Only / GTX)的進場價是從這裡算出來的:買單掛買一減 n 個跳動點、賣單掛賣一加 n 個。
+    /// 沒有盤口就只能拿最新成交價或標記價代替,而那兩個價格都可能已經穿到對手方,送出去的單會被交易所
+    /// 以「這張單會立即成交」為由拒絕 —— 策略於是一筆都進不了場,而且每一次拒絕看起來都像一次偶發的下單失敗。
+    /// A pure-maker entry price is computed from this: buys at the bid minus n ticks, sells at the ask plus n.
+    /// Without the book the only substitutes are the last traded price or the mark price, both of which can sit
+    /// on the wrong side of the spread, and the exchange then rejects the order because it would match
+    /// immediately. The strategy never enters, and every rejection looks like an isolated ordering glitch.
+    /// </para>
+    /// <para>
+    /// 回傳的盤口<b>從離開交易所的那一刻就開始過期</b>。<see cref="BookTicker.ReceivedAt"/> 是本地收到的時間,
+    /// 呼叫端下單前應該自己判斷它還新不新;需要持續跟著盤口走的策略請改用
+    /// <see cref="SubscribeBookTickersAsync"/>,反覆輪詢這個方法既慢又耗限流額度。
+    /// The returned book <b>starts going stale the moment it leaves the exchange</b>.
+    /// <see cref="BookTicker.ReceivedAt"/> records when it arrived locally and callers should judge its freshness
+    /// before sending an order. A strategy that needs to follow the book continuously should take
+    /// <see cref="SubscribeBookTickersAsync"/> instead; polling this method is both slower and expensive against
+    /// the exchange's rate limits.
+    /// </para>
+    /// </remarks>
+    Task<Result<BookTicker>> GetBookTickerAsync(string symbol, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 訂閱盤口。
+    /// Subscribes to the top of the book.
+    /// </summary>
+    /// <param name="symbols">要訂閱的交易對。The symbols to subscribe to.</param>
+    /// <param name="cancellationToken">
+    /// 取消權杖。取消即代表結束訂閱。
+    /// The cancellation token; cancelling it ends the subscription.
+    /// </param>
+    /// <returns>
+    /// 盤口串流。多個商品共用同一串流,以 <see cref="BookTicker.Symbol"/> 區分。
+    /// The book stream. Every symbol shares one stream and is told apart by <see cref="BookTicker.Symbol"/>.
+    /// </returns>
+    /// <remarks>
+    /// 盤口的更新頻率遠高於 K 線:活躍商品每秒可以推出數十筆,而且<b>每一筆都取代前一筆</b>,沒有累積的
+    /// 語意。消費端處理不及時應該直接丟掉舊的那幾筆用最新的一筆,而不是排隊補做 —— 依照三秒前的買一掛出去的
+    /// 單,價格早就不對了。
+    /// The book updates far more often than candles do: an active symbol can push dozens per second, and
+    /// <b>each one replaces the last</b> rather than adding to it. A consumer that falls behind should drop the
+    /// older updates and act on the newest rather than working through a queue: an order priced from a bid three
+    /// seconds old is priced wrongly.
+    /// </remarks>
+    IAsyncEnumerable<Result<BookTicker>> SubscribeBookTickersAsync(
         IReadOnlyCollection<string> symbols,
         CancellationToken cancellationToken = default);
 }
