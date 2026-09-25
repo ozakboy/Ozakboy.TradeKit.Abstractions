@@ -8,6 +8,19 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### 文件 / Documentation
+
+- 補齊 CHANGELOG 結尾的版本比較連結:先前只有 `[0.1.0]` 一條,0.1.1 到 0.6.0 各版的標題都沒有對應的連結,
+  點了不會跳到任何地方。
+  The version comparison links at the end of this changelog are completed: only `[0.1.0]` existed before, so the
+  headings from 0.1.1 to 0.6.0 pointed nowhere.
+- README(中英兩版)的「相關套件」補上 `Ozakboy.TradeKit.Indicators`:它與本套件同屬 TradeKit 家族,
+  先前只列了幣安實作。
+  The "Related packages" section of both READMEs now lists `Ozakboy.TradeKit.Indicators`, which belongs to the
+  same TradeKit family and was missing next to the Binance implementation.
+
 ## [0.6.0] - 2026-09-16
 
 補上**盤口**(買一與賣一)。先前這層抽象只有 K 線與標記價,兩者都不是可以掛單的價格:純 maker
@@ -348,4 +361,11 @@ functions only, with no networking of any kind.
 - **錯誤代碼 / Error codes**:`TradeErrorCodes` 常數與 `TradeErrors` 建立方法,供實作套件把交易所自家的
   錯誤碼對映到中立代碼。
 
+[Unreleased]: https://github.com/ozakboy/Ozakboy.TradeKit.Abstractions/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/ozakboy/Ozakboy.TradeKit.Abstractions/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/ozakboy/Ozakboy.TradeKit.Abstractions/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/ozakboy/Ozakboy.TradeKit.Abstractions/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/ozakboy/Ozakboy.TradeKit.Abstractions/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/ozakboy/Ozakboy.TradeKit.Abstractions/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/ozakboy/Ozakboy.TradeKit.Abstractions/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ozakboy/Ozakboy.TradeKit.Abstractions/releases/tag/v0.1.0

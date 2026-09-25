@@ -169,6 +169,7 @@ consumer should decide whether to log and continue rather than have an exception
 
 * `Ozakboy.Core.Abstractions` — `Result`, `Money`, `Precision`, `RetryPolicy`.
 * `Ozakboy.TradeKit.Binance` — the Binance USDⓈ-M implementation of these interfaces.
+* `Ozakboy.TradeKit.Indicators` — technical indicators (SMA, EMA, RSI, ATR, MACD, Bollinger Bands, Donchian Channel, ADX) in batch and streaming form, all in `decimal`.
 
 ## License
 

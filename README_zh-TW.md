@@ -158,6 +158,7 @@ if (book.TryGetValue(out var top))
 
 * `Ozakboy.Core.Abstractions` — `Result`、`Money`、`Precision`、`RetryPolicy`。
 * `Ozakboy.TradeKit.Binance` — 這組介面的幣安 USDⓈ-M 實作。
+* `Ozakboy.TradeKit.Indicators` — 技術指標(SMA、EMA、RSI、ATR、MACD、布林通道、唐奇安通道、ADX),批次與增量兩種計算,全程 `decimal`。
 
 ## 授權
 
