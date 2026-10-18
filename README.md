@@ -92,7 +92,10 @@ opaque "invalid parameter".
 `OrderIdentifier`, `Position`, `Balance`, `AccountSnapshot` (both with maintenance and initial margin, `null` when the
 exchange does not provide them), `Kline`, `KlineQuery`, `Trade`, `MarkPriceUpdate`, `BookTicker` (the best bid
 and ask with their sizes), `NormalizedOrderSize`, `AccountUpdate` (a **delta**, not a snapshot, built from `PositionChange` and
-`BalanceChange`, which carry only what the event delivers), `MarginCall` (with `MarginCallPosition`),
+`BalanceChange`, which carry only what the event delivers; `Timestamp` is when the exchange pushed the event and
+`TransactionTime` is the matching or transaction time when the account actually changed — use the latter for ordering
+and staleness — and is `null`, never filled from the event time, when the exchange does not provide it),
+`MarginCall` (with `MarginCallPosition`),
 `ResyncRequired`, and the conditional order set: `ConditionalOrderRequest`, `ConditionalOrder`,
 `ConditionalOrderUpdate`, `ConditionalOrderIdentifier`.
 
@@ -104,6 +107,9 @@ full).
 **Error codes** — `TradeErrorCodes` holds the neutral codes (`trade.order_not_found`, `trade.notional_below_min`,
 `trade.rate_limited`, …) and `TradeErrors` builds the corresponding `Error` values. Mapping an exchange's own codes
 onto this set is the implementation package's job, so that no strategy ever contains `if (code == -2011)`.
+Among them, `trade.close_position_conflict` means a whole-position (closePosition) conditional order already exists on
+the same side and the new one was definitely rejected and is not on the book (`Conflict`, not transient); callers
+should confirm or replace the existing order rather than treat the outcome as unknown.
 
 ### A maker order is priced from the book, not from the last price
 

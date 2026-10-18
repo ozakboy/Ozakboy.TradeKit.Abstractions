@@ -88,7 +88,8 @@ else
 **模型** — `SymbolInfo`(識別資料、交易規則與校正方法)、`OrderRequest`、`Order`、`OrderIdentifier`、
 `Position`、`Balance`、`AccountSnapshot`(兩者都帶維持保證金與起始保證金,交易所未提供時為 `null`)、`Kline`、`KlineQuery`、`Trade`、`MarkPriceUpdate`、
 `BookTicker`(買一賣一與兩側掛單量)、`NormalizedOrderSize`、`AccountUpdate`(**增量**,不是快照;由只含事件實際欄位的 `PositionChange` 與
-`BalanceChange` 組成)、`MarginCall`(內含 `MarginCallPosition`)、`ResyncRequired`,以及條件單這一組:
+`BalanceChange` 組成;`Timestamp` 是交易所推送事件的時間,`TransactionTime` 是帳戶變動實際發生的撮合 / 交易時間,
+排序與新舊判斷用後者,交易所未提供時為 `null`、不拿事件時間代填)、`MarginCall`(內含 `MarginCallPosition`)、`ResyncRequired`,以及條件單這一組:
 `ConditionalOrderRequest`、`ConditionalOrder`、`ConditionalOrderUpdate`、`ConditionalOrderIdentifier`。
 
 **介面** — `IExchangeInfoProvider`(商品與伺服器時間)、`IExchangeClient`(帳戶、持倉、委託、條件單)、
@@ -97,7 +98,9 @@ else
 
 **錯誤代碼** — `TradeErrorCodes` 放中立的代碼(`trade.order_not_found`、`trade.notional_below_min`、
 `trade.rate_limited` 等),`TradeErrors` 負責建立對應的 `Error`。把交易所自家的錯誤碼對映到這一組是
-實作套件的責任,如此策略裡才不會出現 `if (code == -2011)`。
+實作套件的責任,如此策略裡才不會出現 `if (code == -2011)`。其中 `trade.close_position_conflict` 表示同方向已經有一張
+全平倉(closePosition)的條件單,新的這張被確定拒絕、不在簿上(`Conflict`,非暫時性),上層應改去確認或撤換既有那一張,
+而不是當成結果不明。
 
 ### 掛單價來自盤口,不是來自最新成交價
 

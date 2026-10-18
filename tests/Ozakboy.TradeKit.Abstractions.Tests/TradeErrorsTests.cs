@@ -80,6 +80,7 @@ public sealed class TradeErrorsTests
             TradeErrorCodes.StreamDisconnected,
             TradeErrorCodes.SubscriptionFailed,
             TradeErrorCodes.NotSupported,
+            TradeErrorCodes.ClosePositionConflict,
             TradeErrorCodes.UnknownExchangeError,
         };
 
@@ -90,6 +91,28 @@ public sealed class TradeErrorsTests
         }
 
         Assert.AreEqual(codes.Length, codes.Distinct().Count(), "錯誤代碼不可重複");
+    }
+
+    [TestMethod]
+    public void 同方向全平倉條件單衝突有自己的代碼而不併進籠統的拒單()
+    {
+        // 這個代碼的價值在於「看得出來」:它代表同方向已經有一張全平倉的保護單在簿上。
+        // 與籠統的拒單或未知錯誤共用代碼,上層就只能把它當成結果不明,改去等待查單。
+        // The code is only useful if it can be told apart: it means a whole-position protective order on the same
+        // side is already on the book. Sharing a code with a generic rejection or an unknown error leaves callers
+        // treating it as an unknown outcome.
+        // 先放進區域變數與陣列再比:兩邊都是編譯期常數時直接比較會被 MSTEST0032 判為「條件恆真」。
+        // Compared through a local and an array: comparing two compile-time constants directly trips MSTEST0032.
+        var actual = TradeErrorCodes.ClosePositionConflict;
+        string[] genericOutcomes =
+        [
+            TradeErrorCodes.ConditionalOrderRejected,
+            TradeErrorCodes.OrderRejected,
+            TradeErrorCodes.UnknownExchangeError,
+        ];
+
+        Assert.AreEqual("trade.close_position_conflict", actual);
+        CollectionAssert.DoesNotContain(genericOutcomes, actual);
     }
 
     [TestMethod]

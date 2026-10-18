@@ -41,6 +41,32 @@ public sealed class UserDataModelTests
     }
 
     [TestMethod]
+    public void 帳戶變動的交易時間沒給就是null而不是事件時間()
+    {
+        // 交易所沒給撮合時間時必須看得出來「沒給」。若預設成 Timestamp,
+        // 拿它判斷 REST 快照新舊的人就分不出這是交易所說的,還是猜出來的。
+        // A missing transaction time has to stay visibly missing. Defaulting it to Timestamp would leave whoever
+        // judges a REST snapshot's age against it unable to tell what the exchange said from what was guessed.
+        var update = new AccountUpdate { Timestamp = Moment };
+
+        Assert.IsNull(update.TransactionTime);
+    }
+
+    [TestMethod]
+    public void 帳戶變動的交易時間與事件時間各自保留()
+    {
+        var transactionTime = Moment.AddMilliseconds(-5);
+        var update = new AccountUpdate { Timestamp = Moment, TransactionTime = transactionTime };
+
+        Assert.AreEqual(Moment, update.Timestamp);
+        Assert.AreEqual(transactionTime, update.TransactionTime);
+
+        // 交易時間參與相等比較:只差在交易時間的兩筆更新不是同一筆。
+        // The transaction time takes part in equality: two updates differing only there are not the same update.
+        Assert.AreNotEqual(update, update with { TransactionTime = null });
+    }
+
+    [TestMethod]
     public void 帳戶變動只帶有動到的項目()
     {
         // 兩個部位的帳戶,這次只動到 BTCUSDT:ETHUSDT 不出現,而那不代表它被平掉了。

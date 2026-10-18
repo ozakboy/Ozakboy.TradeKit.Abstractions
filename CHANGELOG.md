@@ -8,6 +8,58 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-10-18
+
+帳戶變動補上**交易所的撮合 / 交易時間**,錯誤代碼補上**同方向全平倉條件單衝突**。兩者都來自一次 72 小時
+壓測的檢討:消費端要拿交易所時間判斷 REST 部位快照是否已經比串流上的帳戶變動舊,而先前 `AccountUpdate`
+只有事件推送時間;另外,同方向第二張「觸發後平掉整個部位」的條件單被交易所拒絕時,實作套件只能回
+`trade.unknown_exchange_error`,上層因此把一個確定的拒絕當成結果不明。
+Account changes gain the **exchange's matching or transaction time**, and the error codes gain a **same-side
+close-position conflict**. Both come out of a 72-hour soak test review: consumers need the exchange's own time to
+decide whether a REST position snapshot is older than an account change seen on the stream, yet `AccountUpdate`
+carried only the push time; and when the exchange rejected a second whole-position conditional order on the same
+side, implementations had nothing better than `trade.unknown_exchange_error`, so callers read a definite rejection as
+an unknown outcome.
+
+### 新增功能 / Added
+
+- **`AccountUpdate.TransactionTime`**(`DateTimeOffset?`):帳戶這次變動實際發生的時刻(交易所的撮合 / 交易
+  時間)。與既有的 `Timestamp`(交易所推送事件的時間)不同:排序與「另一份資料是否比這次變動還舊」的判斷
+  應該用這個成員,推送延遲大的時候拿事件時間比會判錯。
+  When this change to the account actually happened — the exchange's matching or transaction time. It differs
+  from the existing `Timestamp`, which is when the exchange pushed the event: ordering, and deciding whether
+  another piece of data predates this change, should use this member, because comparing push times goes wrong
+  when delivery is slow.
+- **`TradeErrorCodes.ClosePositionConflict`**(`"trade.close_position_conflict"`):同方向已經有一張全平倉
+  (closePosition)的條件單,新的這張被拒。實作套件應以 `ErrorCategory.Conflict` 回報、非暫時性 —— 這是
+  交易所確定的拒絕,新的那張不在簿上,重送得到同樣的答案,也不需要等待查單。與
+  `ConditionalOrderRejected` 分開,是因為它的含義是「同方向的全平倉保護單已經在簿上」,上層可以直接改去
+  確認或撤換那一張。
+  A whole-position (closePosition) conditional order already exists on this side, so the new one was rejected.
+  Implementations should report it as `ErrorCategory.Conflict`, not transient: the exchange rejected it outright,
+  the new order is not on the book, resending earns the same answer, and there is nothing to wait for or look up.
+  It is separate from `ConditionalOrderRejected` because it means "a whole-position protective order on this side
+  is already on the book", which lets callers go straight to confirming or replacing that order.
+
+### 缺值語意 / Missing values
+
+- **`TransactionTime` 拿不到就是 `null`,不猜。**實作不可以拿 `Timestamp` 或本機時鐘代填:代填之後
+  「交易所說的時間」與「推測出來的時間」看起來一模一樣,用它做的新舊判斷會在沒有任何跡象的情況下出錯。
+  消費端遇到 `null` 應該明確決定退回什麼依據。
+  **A missing `TransactionTime` is `null`; nothing is guessed.** Implementations must not fill it from `Timestamp`
+  or the local clock: once filled, "what the exchange said" and "what was inferred" look identical, and staleness
+  decisions built on it go wrong without a trace. A consumer meeting `null` should decide explicitly what to fall
+  back on.
+
+### 對實作者的影響 / For implementers
+
+純新增,沒有破壞性變更:`TransactionTime` 是預設 `null` 的 init-only 屬性,既有的建構程式碼不必修改;
+新的錯誤代碼只是多一個常數。實作套件要做的是在交易所提供撮合時間時填入,以及把交易所自家的對應錯誤碼
+對映到 `ClosePositionConflict`。
+Purely additive: `TransactionTime` is an init-only property defaulting to `null`, so existing construction code is
+unchanged, and the new error code is one more constant. Implementations fill the property where the exchange
+provides a matching time and map the exchange's own code for this rejection onto `ClosePositionConflict`.
+
 ## [0.6.0] - 2026-09-16
 
 補上**盤口**(買一與賣一)。先前這層抽象只有 K 線與標記價,兩者都不是可以掛單的價格:純 maker

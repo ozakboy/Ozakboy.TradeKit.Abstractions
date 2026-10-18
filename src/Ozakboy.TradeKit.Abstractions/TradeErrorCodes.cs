@@ -164,6 +164,33 @@ public static class TradeErrorCodes
     public const string ConditionalOrderPathRequired = "trade.conditional_order_path_required";
 
     /// <summary>
+    /// 同方向已經有一張「觸發後平掉整個部位」(closePosition)的條件單,新的這張被拒。
+    /// A conditional order that closes the whole position (closePosition) already exists on this side, so the new one
+    /// was rejected.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 實作套件應以 <see cref="Ozakboy.Core.Abstractions.ErrorCategory.Conflict"/> 回報,非暫時性:
+    /// 這是交易所<b>確定的拒絕</b>,新的那張不在簿上;同樣的請求重送幾次都是同樣的答案,
+    /// 也不需要等待查單才下結論 —— 拒絕本身就是結論。
+    /// Implementations should report it as <see cref="Ozakboy.Core.Abstractions.ErrorCategory.Conflict"/>, which is
+    /// not transient: it is a <b>definite rejection</b> by the exchange and the new order is not on the book. Sending
+    /// the same request again earns the same answer, and there is nothing to wait for or look up before concluding —
+    /// the rejection is the conclusion.
+    /// </para>
+    /// <para>
+    /// 與 <see cref="ConditionalOrderRejected"/> 分開,是因為這個拒絕的含義特殊:它代表<b>同方向已經有一張全平倉的
+    /// 保護單在簿上</b>。落到籠統的拒單或「未知錯誤」,上層只能當成結果不明而等待、查單、記一筆失聯;
+    /// 有了專屬代碼,上層可以直接改去確認(或撤換)那張既有的保護單。
+    /// Separate from <see cref="ConditionalOrderRejected"/> because this rejection carries a specific meaning: <b>a
+    /// whole-position protective order on the same side is already on the book</b>. Folded into a generic rejection
+    /// or an unknown error, callers can only treat it as an unknown outcome — wait, query, log a connectivity
+    /// failure. With its own code they can go straight to confirming, or replacing, the existing protective order.
+    /// </para>
+    /// </remarks>
+    public const string ClosePositionConflict = "trade.close_position_conflict";
+
+    /// <summary>
     /// 找不到這個商品的持倉。
     /// No position exists for the symbol.
     /// </summary>
