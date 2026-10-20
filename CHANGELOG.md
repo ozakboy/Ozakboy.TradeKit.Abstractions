@@ -8,6 +8,72 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-10-21
+
+區分**「可能已經執行」與「確定沒有執行」**的兩個錯誤代碼,委託的**到期原因**,以及移動停損**是否已啟動**。
+全部來自一次上實盤前的評估:交易所對同一個 HTTP 503 會回兩種意義相反的訊息,一種是「結果不明、可能已經成功」,
+一種是「確定沒有執行」,先前兩者只能共用 `trade.exchange_unavailable`,上層對下單的處置只能用猜的;
+另外,交易所的委託事件會說明一張單為什麼到期(`IOC` 剩餘取消、強平、下架、被只減倉單擠掉…),這一層卻沒有地方放。
+Two error codes that separate **"may have executed"** from **"definitely did not"**, the **reason an order expired**,
+and **whether a trailing stop has activated**. All come out of a pre-live review: an exchange can answer the same HTTP
+503 with two messages of opposite meaning — "outcome unknown, it may have succeeded" and "definitely not executed" —
+which until now had to share `trade.exchange_unavailable`, leaving callers to guess how to treat an order; and the
+exchange's order events explain why an order expired (an `IOC` remainder, liquidation, delisting, a reduce-only
+knockout…) with nowhere in this layer to put it.
+
+### 新增功能 / Added
+
+- **`TradeErrorCodes.OutcomeUnknown`**(`"trade.outcome_unknown"`):請求送到了交易所,但交易所回報執行結果不明 ——
+  可能已經成功。實作套件應以 `ErrorCategory.Unavailable` 回報。會改變狀態的請求(下單、撤單)遇到它必須先以同一個
+  用戶端編號查詢確認(或等私有串流),不可以當成失敗直接重送。
+  The request reached the exchange, which reports the outcome as unknown — it may have succeeded. Implementations
+  report it as `ErrorCategory.Unavailable`. A state-changing request (an order, a cancellation) meeting it must first
+  be confirmed by its client id, or on the private stream, and never re-sent as though it had failed.
+- **`TradeErrorCodes.OrderStateInTransition`**(`"trade.order_state_in_transition"`):委託正處於交易所內部的狀態轉換中
+  (例如條件單正在觸發),這次操作沒有生效但也不是確定的失敗。實作套件應以 `ErrorCategory.Unavailable`(暫時性)回報;
+  正確的下一步是稍後重查。
+  The order is mid-way through an internal state change at the exchange, such as a conditional order being triggered:
+  the operation did not take effect but is not a definite failure. Implementations report it as
+  `ErrorCategory.Unavailable`, which is transient; the right next step is to look the order up again shortly.
+- **`OrderExpiryReason`** 與 **`Order.ExpiryReason`**(`OrderExpiryReason?`):交易所讓這張單到期 / 取消的原因 ——
+  防止自成交、`IOC` 剩餘取消、`IOC` 為防自成交而取消、被只減倉單擠掉、強平、只在持倉時有效的條件不再成立、
+  商品下架、停損觸發後原單到期、市價單剩餘取消。
+  Why the exchange expired or cancelled the order: self-trade prevention, an `IOC` remainder, an `IOC` stopped short to
+  prevent self-trading, a reduce-only knockout, liquidation, a position-only condition no longer holding, delisting,
+  the original order expiring once a stop triggered, and a market order remainder.
+- **`ConditionalOrder.IsActivated`**(`bool?`):移動停損是否已經啟動。觸發之前可能收到兩則狀態同為 `New`、
+  只差在這一項的更新,以「編號 + 狀態」去重的消費端必須把它算進去鍵裡。
+  Whether a trailing stop has activated. Two updates with the same `New` status that differ only here may arrive
+  before it triggers, so a consumer de-duplicating on "id plus status" must include it in the key.
+
+### 缺值語意 / Missing values
+
+- **`ExpiryReason` 交易所沒給就是 `null`**,不從狀態或時間推測;`OrderExpiryReason.Other` 只用在「交易所給了、
+  但本列舉認不得」的原因。多數交易所只在私有串流上提供這一項,REST 查單通常沒有。
+  **A missing `ExpiryReason` is `null`**, never inferred from the status or the timing; `OrderExpiryReason.Other` is only
+  for a reason the exchange gave that the enumeration does not recognise. Most exchanges supply it only on the private
+  stream, not on a REST lookup.
+- **`IsActivated` 交易所沒給就是 `null`**,不填 `false`。
+  **A missing `IsActivated` is `null`**, not `false`.
+
+### 技術改進 / Changed
+
+- **`TradeErrorCodes.ExchangeUnavailable` 的說明**補上:交易所能明確說出「這次請求沒有被執行」時優先用它,
+  交易所自己說結果不明時改用 `OutcomeUnknown`。代碼字串與既有語意不變。
+  The documentation of `TradeErrorCodes.ExchangeUnavailable` now says it is preferred when the exchange can state the
+  request was not executed, with `OutcomeUnknown` for when the exchange itself says the outcome is unknown. The code
+  string and its existing meaning are unchanged.
+
+### 對實作者與消費端的影響 / For implementers and consumers
+
+純新增,沒有破壞性變更:兩個新屬性都是預設 `null` 的 init-only 屬性,兩個新代碼只是多兩個常數。
+消費端若以白名單判斷「哪些錯誤代表連線問題 / 可以稍後再試」,要把 `trade.outcome_unknown` 與
+`trade.order_state_in_transition` 一併考慮進去 —— 前者對下單的處置與 `trade.exchange_unavailable` 相反。
+Purely additive: both new properties are init-only and default to `null`, and the two codes are two more constants.
+Consumers that whitelist which codes mean "connectivity" or "try again later" should take `trade.outcome_unknown` and
+`trade.order_state_in_transition` into account — the former calls for the opposite handling of an order from
+`trade.exchange_unavailable`.
+
 ## [0.7.0] - 2026-10-18
 
 帳戶變動補上**交易所的撮合 / 交易時間**,錯誤代碼補上**同方向全平倉條件單衝突**。兩者都來自一次 72 小時

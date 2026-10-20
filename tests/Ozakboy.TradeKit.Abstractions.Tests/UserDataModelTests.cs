@@ -29,6 +29,49 @@ public sealed class UserDataModelTests
     }
 
     [TestMethod]
+    public void 委託的到期原因沒給就是null而不是某個列舉值()
+    {
+        // null 是「交易所沒說」;Other 才是「交易所說了但認不出來」。兩者混用,上層就分不出原因是缺漏還是新代碼。
+        // null means the exchange said nothing; Other means it said something unrecognised. Mixing the two leaves the
+        // caller unable to tell a missing reason from a new code.
+        var order = new Order
+        {
+            Symbol = "BTCUSDT",
+            ClientOrderId = "c-1",
+            Side = OrderSide.Buy,
+            OrderType = OrderType.Limit,
+            Status = OrderStatus.Expired,
+        };
+
+        Assert.IsNull(order.ExpiryReason);
+        Assert.AreEqual(0, ToInt(OrderExpiryReason.Other));
+
+        var withReason = order with { ExpiryReason = OrderExpiryReason.ImmediateOrCancelRemainder };
+
+        Assert.AreEqual(OrderExpiryReason.ImmediateOrCancelRemainder, withReason.ExpiryReason);
+        Assert.AreNotEqual(order, withReason);
+    }
+
+    [TestMethod]
+    public void 條件單是否已啟動沒給就是null()
+    {
+        // 移動停損觸發前可能連收兩則 New,差別只在是否已啟動;這一項必須參與相等比較,去重才不會吃掉第二則。
+        // A trailing stop can deliver two New updates that differ only in activation; the value takes part in equality
+        // so that de-duplication does not swallow the second.
+        var order = new ConditionalOrder
+        {
+            Symbol = "BTCUSDT",
+            ClientConditionalOrderId = "a-1",
+            Side = OrderSide.Sell,
+            ConditionalOrderType = ConditionalOrderType.TrailingStopMarket,
+            Status = ConditionalOrderStatus.New,
+        };
+
+        Assert.IsNull(order.IsActivated);
+        Assert.AreNotEqual(order with { IsActivated = false }, order with { IsActivated = true });
+    }
+
+    [TestMethod]
     public void 帳戶變動預設為空的增量而不是空的快照()
     {
         var update = new AccountUpdate { Timestamp = Moment };

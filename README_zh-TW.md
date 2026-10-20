@@ -83,14 +83,16 @@ else
 ## 內容一覽
 
 **列舉** — `OrderSide`、`PositionSide`、`OrderType`、`TimeInForce`、`OrderStatus`、`KlineInterval`、
-`MarginMode`、`TriggerPriceType`、`PriceRounding`、`ConditionalOrderType`、`ConditionalOrderStatus`。
+`MarginMode`、`TriggerPriceType`、`PriceRounding`、`ConditionalOrderType`、`ConditionalOrderStatus`、`OrderExpiryReason`。
 
-**模型** — `SymbolInfo`(識別資料、交易規則與校正方法)、`OrderRequest`、`Order`、`OrderIdentifier`、
+**模型** — `SymbolInfo`(識別資料、交易規則與校正方法)、`OrderRequest`、`Order`(含 `ExpiryReason`:交易所讓它到期 / 取消的原因,
+交易所沒給時為 `null`、不推測代填)、`OrderIdentifier`、
 `Position`、`Balance`、`AccountSnapshot`(兩者都帶維持保證金與起始保證金,交易所未提供時為 `null`)、`Kline`、`KlineQuery`、`Trade`、`MarkPriceUpdate`、
 `BookTicker`(買一賣一與兩側掛單量)、`NormalizedOrderSize`、`AccountUpdate`(**增量**,不是快照;由只含事件實際欄位的 `PositionChange` 與
 `BalanceChange` 組成;`Timestamp` 是交易所推送事件的時間,`TransactionTime` 是帳戶變動實際發生的撮合 / 交易時間,
 排序與新舊判斷用後者,交易所未提供時為 `null`、不拿事件時間代填)、`MarginCall`(內含 `MarginCallPosition`)、`ResyncRequired`,以及條件單這一組:
-`ConditionalOrderRequest`、`ConditionalOrder`、`ConditionalOrderUpdate`、`ConditionalOrderIdentifier`。
+`ConditionalOrderRequest`、`ConditionalOrder`(含移動停損的 `IsActivated`:觸發前可能收到兩則只差在這一項的 `New`,
+去重鍵要把它算進去)、`ConditionalOrderUpdate`、`ConditionalOrderIdentifier`。
 
 **介面** — `IExchangeInfoProvider`(商品與伺服器時間)、`IExchangeClient`(帳戶、持倉、委託、條件單)、
 `IMarketDataFeed`(歷史 K 線、即時 K 線、標記價與盤口)、`IUserDataFeed`(委託、條件單、成交、帳戶變動、
@@ -100,7 +102,9 @@ else
 `trade.rate_limited` 等),`TradeErrors` 負責建立對應的 `Error`。把交易所自家的錯誤碼對映到這一組是
 實作套件的責任,如此策略裡才不會出現 `if (code == -2011)`。其中 `trade.close_position_conflict` 表示同方向已經有一張
 全平倉(closePosition)的條件單,新的這張被確定拒絕、不在簿上(`Conflict`,非暫時性),上層應改去確認或撤換既有那一張,
-而不是當成結果不明。
+而不是當成結果不明。`trade.outcome_unknown` 表示交易所自己回報結果不明、請求可能已經執行 —— 會改變狀態的請求要以
+用戶端編號查詢確認,不可直接重送;`trade.exchange_unavailable` 則是確定沒有執行。`trade.order_state_in_transition`
+表示委託正處於交易所內部的狀態轉換中(例如條件單正在觸發),這次操作沒有生效、但也不是確定的失敗,稍後重查再決定。
 
 ### 掛單價來自盤口,不是來自最新成交價
 

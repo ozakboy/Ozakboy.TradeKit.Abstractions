@@ -86,9 +86,10 @@ opaque "invalid parameter".
 ## What is in the box
 
 **Enums** — `OrderSide`, `PositionSide`, `OrderType`, `TimeInForce`, `OrderStatus`, `KlineInterval`, `MarginMode`,
-`TriggerPriceType`, `PriceRounding`, `ConditionalOrderType`, `ConditionalOrderStatus`.
+`TriggerPriceType`, `PriceRounding`, `ConditionalOrderType`, `ConditionalOrderStatus`, `OrderExpiryReason`.
 
-**Models** — `SymbolInfo` (identity plus trading rules and the normalisation methods), `OrderRequest`, `Order`,
+**Models** — `SymbolInfo` (identity plus trading rules and the normalisation methods), `OrderRequest`, `Order` (with
+`ExpiryReason`, why the exchange expired or cancelled it — `null` when the exchange gives no reason, never inferred),
 `OrderIdentifier`, `Position`, `Balance`, `AccountSnapshot` (both with maintenance and initial margin, `null` when the
 exchange does not provide them), `Kline`, `KlineQuery`, `Trade`, `MarkPriceUpdate`, `BookTicker` (the best bid
 and ask with their sizes), `NormalizedOrderSize`, `AccountUpdate` (a **delta**, not a snapshot, built from `PositionChange` and
@@ -96,7 +97,8 @@ and ask with their sizes), `NormalizedOrderSize`, `AccountUpdate` (a **delta**, 
 `TransactionTime` is the matching or transaction time when the account actually changed — use the latter for ordering
 and staleness — and is `null`, never filled from the event time, when the exchange does not provide it),
 `MarginCall` (with `MarginCallPosition`),
-`ResyncRequired`, and the conditional order set: `ConditionalOrderRequest`, `ConditionalOrder`,
+`ResyncRequired`, and the conditional order set: `ConditionalOrderRequest`, `ConditionalOrder` (with `IsActivated`
+for a trailing stop — two `New` updates may arrive that differ only there, so include it in any de-duplication key),
 `ConditionalOrderUpdate`, `ConditionalOrderIdentifier`.
 
 **Interfaces** — `IExchangeInfoProvider` (symbols, server time), `IExchangeClient` (account, positions, orders,
@@ -110,6 +112,11 @@ onto this set is the implementation package's job, so that no strategy ever cont
 Among them, `trade.close_position_conflict` means a whole-position (closePosition) conditional order already exists on
 the same side and the new one was definitely rejected and is not on the book (`Conflict`, not transient); callers
 should confirm or replace the existing order rather than treat the outcome as unknown.
+`trade.outcome_unknown` means the exchange itself reports that the outcome is unknown and the request may have
+executed — confirm a state-changing request by its client id instead of re-sending it — as opposed to
+`trade.exchange_unavailable`, where it definitely did not. `trade.order_state_in_transition` means the order is mid-way
+through a state change at the exchange (a conditional order being triggered, say): the operation did not take effect,
+but it is not a definite failure either, so look the order up again shortly.
 
 ### A maker order is priced from the book, not from the last price
 

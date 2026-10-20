@@ -266,7 +266,48 @@ public static class TradeErrorCodes
     /// 交易所暫時無法服務(維護中、系統忙碌)。
     /// The exchange is temporarily unavailable, for example under maintenance.
     /// </summary>
+    /// <remarks>
+    /// 當交易所能明確說出「這次請求沒有被執行」時,實作套件應優先用這個代碼;
+    /// 交易所自己說結果不明的,改用 <see cref="OutcomeUnknown"/>。
+    /// Implementations should prefer this code when the exchange can state that the request was not executed; when
+    /// the exchange itself says the outcome is unknown, use <see cref="OutcomeUnknown"/> instead.
+    /// </remarks>
     public const string ExchangeUnavailable = "trade.exchange_unavailable";
+
+    /// <summary>
+    /// 請求送到了交易所,但交易所回報執行結果不明 —— 可能已經成功。
+    /// The request reached the exchange, which reports that the outcome is unknown: it may well have succeeded.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 實作套件應以 <see cref="Ozakboy.Core.Abstractions.ErrorCategory.Unavailable"/> 回報。與
+    /// <see cref="ExchangeUnavailable"/> 分開,是因為兩者對「會改變狀態的請求」要求的處置相反:
+    /// 後者代表確定沒有執行,可以照常重送;這一個代表<b>可能已經執行</b>,下單、撤單之類的請求必須先以
+    /// 同一個用戶端編號查詢確認(或等待私有串流),不可以直接當成失敗重送 —— 那會開出第二個部位。
+    /// Implementations should report it as <see cref="Ozakboy.Core.Abstractions.ErrorCategory.Unavailable"/>. It is
+    /// separate from <see cref="ExchangeUnavailable"/> because the two call for opposite handling of a state-changing
+    /// request: that one means it definitely did not execute and may be sent again, while this one means it <b>may
+    /// have executed</b>, so an order or a cancellation must first be confirmed by its client id — or on the private
+    /// stream — rather than treated as a failure and re-sent, which would open a second position.
+    /// </para>
+    /// </remarks>
+    public const string OutcomeUnknown = "trade.outcome_unknown";
+
+    /// <summary>
+    /// 委託正處於交易所內部的狀態轉換中(例如條件單正在觸發),這次操作沒有生效,但也不是確定的失敗。
+    /// The order is in the middle of an internal state transition at the exchange — a conditional order being
+    /// triggered, for instance — so this operation did not take effect, yet it is not a definite failure either.
+    /// </summary>
+    /// <remarks>
+    /// 實作套件應以 <see cref="Ozakboy.Core.Abstractions.ErrorCategory.Unavailable"/>(暫時性)回報。
+    /// 正確的下一步是稍後重查該委託的狀態再決定:轉換完成之後它可能已經觸發成一張實際委託,也可能可以再撤一次。
+    /// 把它當成「撤不掉、已經不在了」或「撤單失敗、仍然掛著」都是猜測。
+    /// Implementations should report it as <see cref="Ozakboy.Core.Abstractions.ErrorCategory.Unavailable"/>, which
+    /// is transient. The right next step is to look the order up again shortly and decide then: once the transition
+    /// completes it may have become a real order, or it may be cancellable again. Reading it as either "gone" or
+    /// "still resting" is a guess.
+    /// </remarks>
+    public const string OrderStateInTransition = "trade.order_state_in_transition";
 
     /// <summary>
     /// 市場目前不接受委託。

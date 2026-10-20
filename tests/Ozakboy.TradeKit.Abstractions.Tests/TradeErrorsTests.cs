@@ -81,6 +81,8 @@ public sealed class TradeErrorsTests
             TradeErrorCodes.SubscriptionFailed,
             TradeErrorCodes.NotSupported,
             TradeErrorCodes.ClosePositionConflict,
+            TradeErrorCodes.OutcomeUnknown,
+            TradeErrorCodes.OrderStateInTransition,
             TradeErrorCodes.UnknownExchangeError,
         };
 
@@ -113,6 +115,29 @@ public sealed class TradeErrorsTests
 
         Assert.AreEqual("trade.close_position_conflict", actual);
         CollectionAssert.DoesNotContain(genericOutcomes, actual);
+    }
+
+    [TestMethod]
+    public void 結果不明與確定沒執行各有代碼()
+    {
+        // 交易所說「結果不明、可能已經成功」與「確定沒有執行」,對下單的處置剛好相反:前者要查單,後者可以重送。
+        // 共用一個代碼,上層只能二選一地猜 —— 猜錯的那一邊是重複的部位,或是一張以為沒進去的單。
+        // "Outcome unknown, may have succeeded" and "definitely not executed" call for opposite handling of an order:
+        // look it up versus send again. Sharing a code forces a guess, and the wrong guess is a duplicate position.
+        var unknown = TradeErrorCodes.OutcomeUnknown;
+        var transition = TradeErrorCodes.OrderStateInTransition;
+        string[] others =
+        [
+            TradeErrorCodes.ExchangeUnavailable,
+            TradeErrorCodes.RequestTimeout,
+            TradeErrorCodes.UnknownExchangeError,
+            TradeErrorCodes.OrderNotCancelable,
+        ];
+
+        Assert.AreEqual("trade.outcome_unknown", unknown);
+        Assert.AreEqual("trade.order_state_in_transition", transition);
+        CollectionAssert.DoesNotContain(others, unknown);
+        CollectionAssert.DoesNotContain(others, transition);
     }
 
     [TestMethod]

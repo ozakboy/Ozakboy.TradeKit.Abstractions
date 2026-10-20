@@ -109,6 +109,19 @@ public sealed record Order
     public decimal FilledNotional { get; init; }
 
     /// <summary>
+    /// 交易所讓這張單到期 / 取消的原因。交易所沒有給原因時為 <see langword="null"/>。
+    /// Why the exchange expired or cancelled this order, or <see langword="null"/> when it gave no reason.
+    /// </summary>
+    /// <remarks>
+    /// 只在交易所明確提供原因時才有值,實作套件不可以從狀態或時間推測代填:<see langword="null"/> 代表
+    /// 「不知道」,而不是「沒有特別原因」。多數交易所只在私有串流的委託事件上提供這一項,REST 查單通常沒有。
+    /// It carries a value only when the exchange states the reason, and implementations must not infer one from the
+    /// status or the timing: <see langword="null"/> means "not known" rather than "no particular reason". Most
+    /// exchanges supply it only on the private stream's order events, not on a REST lookup.
+    /// </remarks>
+    public OrderExpiryReason? ExpiryReason { get; init; }
+
+    /// <summary>
     /// 建立時間(UTC 語意)。
     /// The creation time, in UTC semantics.
     /// </summary>

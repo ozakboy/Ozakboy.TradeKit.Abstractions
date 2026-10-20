@@ -106,6 +106,28 @@ public sealed record ConditionalOrder
     public decimal? ActivationPrice { get; init; }
 
     /// <summary>
+    /// 移動停損是否已經啟動(市價走到啟動價之後才開始追蹤)。交易所沒有提供時為 <see langword="null"/>。
+    /// Whether a trailing stop has activated — begun trailing once the market reached the activation price — or
+    /// <see langword="null"/> when the exchange does not say.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 只對移動停損有意義;其他類型交易所即使有回這一項,值也沒有用途。
+    /// Meaningful only for a trailing stop; for the other types the value has no use even when the exchange sends it.
+    /// </para>
+    /// <para>
+    /// <b>同一個狀態可能收到兩則更新。</b>移動停損在觸發前,狀態一直是 <see cref="ConditionalOrderStatus.New"/>,
+    /// 交易所可能先推一則「未啟動」、啟動後再推一則「已啟動」。以「條件單編號 + 狀態」去重的消費端會把第二則吃掉,
+    /// 去重鍵必須連這一項一起算。
+    /// <b>One status can arrive twice.</b> Before it triggers a trailing stop stays
+    /// <see cref="ConditionalOrderStatus.New"/>, and the exchange may push one update while it is not yet activated and
+    /// another once it is. A consumer de-duplicating on "id plus status" swallows the second, so the key must include
+    /// this value.
+    /// </para>
+    /// </remarks>
+    public bool? IsActivated { get; init; }
+
+    /// <summary>
     /// 是否為只減倉條件單。
     /// Whether the conditional order is reduce-only.
     /// </summary>
